@@ -1,0 +1,9 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>ILearn</title>
+        <!-- Empty for now — auto-update isn't wired up to a release feed yet.
+             scripts/release.sh generates entries here once you point
+             GITHUB_REPO at your own releases repo and run a release. -->
+    </channel>
+</rss>
