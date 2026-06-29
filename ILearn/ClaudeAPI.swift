@@ -6,7 +6,9 @@
 import Foundation
 
 /// Claude API helper with streaming for progressive text display.
-class ClaudeAPI {
+/// Conforms to `ClaudeBackend` so it's interchangeable with `ClaudeCodeBackend`
+/// (the local-subscription CLI path). See `ClaudeCodeBackend.swift`.
+class ClaudeAPI: ClaudeBackend {
     private static let tlsWarmupLock = NSLock()
     private static var hasStartedTLSWarmup = false
 

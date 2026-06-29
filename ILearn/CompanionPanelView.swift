@@ -3,7 +3,7 @@
 //  ILearn
 //
 //  The SwiftUI content hosted inside the menu bar panel. Shows the companion
-//  ask status, the Control+I shortcut, and quick settings. Designed to feel
+//  ask status, the Control+C shortcut, and quick settings. Designed to feel
 //  like Loom's recording panel — dark, rounded, minimal, and special.
 //
 
@@ -117,7 +117,7 @@ struct CompanionPanelView: View {
     @ViewBuilder
     private var permissionsCopySection: some View {
         if companionManager.hasCompletedOnboarding && companionManager.allPermissionsGranted {
-            Text("Press Control+I to ask about anything on screen.")
+            Text("Press Control+Z to ask about anything on screen.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(DS.Colors.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)

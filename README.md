@@ -2,7 +2,7 @@
 
 A macOS menu bar buddy that helps you understand whatever you're looking at on your screen. Press **Control+I**, drag-select the part of your screen you're confused about (same interactive selection as Cmd+Shift+4), type your question, and get a beginner-friendly explanation streamed into the same window.
 
-This is a personal fork of [Clicky](https://github.com/farzaa/clicky) by Farza (MIT licensed, forking explicitly encouraged) — rebranded and reworked to drop the voice pipeline (AssemblyAI + ElevenLabs) in favor of typed questions and read answers, so the only thing you need to pay for is your own Anthropic API key.
+This is a personal fork of [Clicky](https://github.com/farzaa/clicky) by Farza (MIT licensed, forking explicitly encouraged) — rebranded and reworked to drop the voice pipeline (AssemblyAI + ElevenLabs) in favor of typed questions and read answers. By default it runs on your existing **Claude subscription** through the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI, so there's **no API key and no per-token billing** — nothing extra to pay for beyond the plan you already have.
 
 ## What's different from the original Clicky
 
@@ -11,63 +11,63 @@ This is a personal fork of [Clicky](https://github.com/farzaa/clicky) by Farza (
 - **Control+I instead of Control+Option**, since Control+Option is already used by other Claude tooling.
 - **Beginner-friendly answers.** The system prompt is tuned to explain things in plain language rather than assume background knowledge.
 - **No analytics, no email capture.** The original shipped a live PostHog key that logged full question/answer text, plus an onboarding email form that posted to the original developer's FormSpark endpoint. Both are removed.
-- **Cheaper to run.** The Cloudflare Worker only proxies Claude now — no AssemblyAI or ElevenLabs keys needed.
+- **Free to run on your Claude subscription.** By default ILearn answers by driving the local `claude` CLI, which signs in with your Claude plan — no Anthropic API key and no per-token charges. (A Cloudflare Worker + API key path is still there as an optional fallback.)
 
 The blue cursor buddy, the onboarding pointing demo, and the menu bar panel are still here — they just don't carry voice features anymore.
 
-## Get started with Claude Code
-
-The fastest way to get this running is with [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Once you're in this repo, just ask it to help you set up the Cloudflare Worker with your own Anthropic API key and get the app building in Xcode — it already knows the architecture from `CLAUDE.md`.
-
-## Manual setup
+## Setup (default — your Claude subscription, no API key)
 
 ### Prerequisites
 
 - macOS 14.2+ (for ScreenCaptureKit)
 - Xcode 15+
-- Node.js 18+ (for the Cloudflare Worker)
-- A [Cloudflare](https://cloudflare.com) account (free tier works)
-- An [Anthropic](https://console.anthropic.com) API key
+- The [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI, installed and signed in with your Claude subscription
 
-### 1. Set up the Cloudflare Worker
+### 1. Install and sign in to the Claude Code CLI
 
-The Worker is a tiny proxy that holds your API key. The app talks to the Worker, the Worker talks to Claude. This way your key never ships in the app binary.
+Install Claude Code, then sign in once with your Claude account:
+
+```bash
+claude        # launches Claude Code; sign in with your Claude subscription
+claude -p "hello"   # confirm it answers without an API key
+```
+
+ILearn looks for the `claude` binary in `~/.local/bin`, Homebrew, and `/usr/local/bin`, and falls back to your login-shell `PATH`. If it's installed somewhere unusual, point the app at it:
+
+```bash
+defaults write com.ilearn.app claudeCliPath "/full/path/to/claude"
+```
+
+### 2. Open in Xcode and run
+
+That's it — no Worker, no key. The app shells out to the CLI, which uses your subscription. Pick your model in the menu-bar panel (Haiku for speed/cost, Sonnet for depth).
+
+## Optional: Cloudflare Worker + API key fallback
+
+If you'd rather use a pay-as-you-go Anthropic API key (for example, to distribute to people who don't have a Claude subscription), switch the backend off the CLI:
+
+```bash
+defaults write com.ilearn.app useClaudeCodeBackend -bool false
+```
+
+Then set up the Worker, which holds your API key so it never ships in the app binary:
 
 ```bash
 cd worker
 npm install
 npx wrangler secret put ANTHROPIC_API_KEY
-npx wrangler deploy
+npx wrangler deploy   # prints a https://your-worker-name.your-subdomain.workers.dev URL
 ```
 
-It'll give you a URL like `https://your-worker-name.your-subdomain.workers.dev`. Copy that.
-
-### 2. Run the Worker locally (for development)
-
-```bash
-cd worker
-npx wrangler dev
-```
-
-This starts a local server (usually `http://localhost:8787`) that behaves exactly like the deployed Worker. Create a `worker/.dev.vars` file with:
-
-```
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Then update the proxy URL in the Swift code to point to `http://localhost:8787` instead of the deployed Worker URL while developing.
-
-### 3. Update the proxy URL in the app
-
-The app reads the Worker URL from a local UserDefaults value, not from source — that way it never ends up committed (the Worker has no auth check, so a real URL sitting in a public repo could let anyone use your Anthropic API key). Set it once:
+Point the app at that URL (read from local UserDefaults, never committed, since the Worker has no auth check):
 
 ```bash
 defaults write com.ilearn.app workerBaseURL "https://your-worker-name.your-subdomain.workers.dev"
 ```
 
-Relaunch the app after setting this. If the key is never set, it falls back to the placeholder in `ILearn/CompanionManager.swift`.
+For local Worker development, `npx wrangler dev` serves `http://localhost:8787` (behaves like the deployed Worker); put `ANTHROPIC_API_KEY=sk-ant-...` in `worker/.dev.vars` and set `workerBaseURL` to the localhost URL. Relaunch the app after changing any of these.
 
-### 4. Open in Xcode and run
+### Open in Xcode and run
 
 ```bash
 open ILearn.xcodeproj
@@ -88,7 +88,7 @@ The app will appear in your menu bar (not the dock). Click the icon to open the 
 
 ## Architecture
 
-If you want the full technical breakdown, read `CLAUDE.md`. Short version: a menu-bar app with no dock icon. Control+I triggers macOS's own interactive screenshot selection (`screencapture -i -s`), then opens a single fixed-size window centered on screen with the screenshot thumbnail and a text field. Your typed question plus the selected screenshot go to Claude via streaming SSE, and the same window switches to show your question plus the streamed answer below it. A separate blue cursor overlay handles the onboarding demo, where Claude can point at things on screen via `[POINT:x,y:label]` tags. All Claude API calls are proxied through a Cloudflare Worker so the API key never ships in the app.
+If you want the full technical breakdown, read `CLAUDE.md`. Short version: a menu-bar app with no dock icon. Control+I triggers macOS's own interactive screenshot selection (`screencapture -i -s`), then opens a single fixed-size window centered on screen with the screenshot thumbnail and a text field. Your typed question plus the selected screenshot go to Claude via streaming SSE, and the same window switches to show your question plus the streamed answer below it. A separate blue cursor overlay handles the onboarding demo, where Claude can point at things on screen via `[POINT:x,y:label]` tags. By default the answer comes from the local `claude` CLI running on your Claude subscription (no API key); an optional Cloudflare Worker + API key path is available as a fallback.
 
 ## Project structure
 

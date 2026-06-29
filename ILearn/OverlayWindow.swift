@@ -10,6 +10,28 @@
 import AppKit
 import SwiftUI
 
+/// One arrow to draw on the REAL screen in live mode, pinned to an actual UI
+/// control whose exact frame was resolved from the Accessibility tree. Unlike
+/// the single flying-cursor pointer, several of these can be shown at once and
+/// they stay put while the user reads the answer.
+struct LiveArrowTarget: Identifiable, Equatable {
+    let id: UUID
+    /// The element's center in AppKit GLOBAL screen coordinates (bottom-left
+    /// origin), matching what the overlay flight pipeline already uses.
+    let screenLocation: CGPoint
+    /// Short label drawn beside the arrow (e.g. "Star button").
+    let label: String
+    /// Step number for an ordered how-to sequence, or nil for a plain arrow.
+    let stepNumber: Int?
+
+    init(id: UUID = UUID(), screenLocation: CGPoint, label: String, stepNumber: Int? = nil) {
+        self.id = id
+        self.screenLocation = screenLocation
+        self.label = label
+        self.stepNumber = stepNumber
+    }
+}
+
 class OverlayWindow: NSWindow {
     init(screen: NSScreen) {
         // Create window covering entire screen
@@ -127,6 +149,9 @@ struct BlueCursorView: View {
     @State private var bubbleSize: CGSize = .zero
     @State private var bubbleOpacity: Double = 1.0
     @State private var cursorOpacity: Double = 0.0
+    /// Size of the "take a screenshot…" capture-prompt bubble, tracked
+    /// separately so it positions correctly regardless of the other bubbles.
+    @State private var capturePromptSize: CGSize = .zero
 
     // MARK: - Buddy Navigation State
 
@@ -207,7 +232,7 @@ struct BlueCursorView: View {
                     }
             }
 
-            // Onboarding prompt — "press control + i and ask something" streamed after the demo
+            // Onboarding prompt — "press control + c and ask something" streamed after the demo
             if isCursorOnThisScreen && companionManager.showOnboardingPrompt && !companionManager.onboardingPromptText.isEmpty {
                 Text(companionManager.onboardingPromptText)
                     .font(.system(size: 11, weight: .medium))
@@ -232,6 +257,36 @@ struct BlueCursorView: View {
                     .animation(.easeOut(duration: 0.4), value: companionManager.onboardingPromptOpacity)
                     .onPreferenceChange(SizePreferenceKey.self) { newSize in
                         bubbleSize = newSize
+                    }
+            }
+
+            // Capture prompt — "take a screenshot for ilearn to see and help",
+            // typewriter-streamed onto the cursor the moment the ask hotkey is
+            // pressed. Black text on a light bubble, per the requested look.
+            if isCursorOnThisScreen && companionManager.showCapturePrompt && !companionManager.capturePromptText.isEmpty {
+                Text(companionManager.capturePromptText)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.white)
+                            .shadow(color: Color.black.opacity(0.25), radius: 6, x: 0, y: 1)
+                    )
+                    .fixedSize()
+                    .overlay(
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(key: SizePreferenceKey.self, value: geo.size)
+                        }
+                    )
+                    .opacity(companionManager.capturePromptOpacity)
+                    .position(x: cursorPosition.x + 10 + (capturePromptSize.width / 2), y: cursorPosition.y + 18)
+                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
+                    .animation(.easeOut(duration: 0.3), value: companionManager.capturePromptOpacity)
+                    .onPreferenceChange(SizePreferenceKey.self) { newSize in
+                        capturePromptSize = newSize
                     }
             }
 
@@ -306,6 +361,12 @@ struct BlueCursorView: View {
                 .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
                 .animation(.easeIn(duration: 0.15), value: companionManager.askState)
 
+            // Live arrows — persistent labeled arrows pinned to real on-screen
+            // controls (live mode). Drawn on top of everything else, never
+            // intercepting clicks. Only the targets that fall on THIS screen
+            // are drawn here; each screen's overlay handles its own.
+            LiveArrowsCanvas(markers: liveArrowMarkersForThisScreen)
+                .allowsHitTesting(false)
         }
         .frame(width: screenFrame.width, height: screenFrame.height)
         .ignoresSafeArea()
@@ -417,6 +478,21 @@ struct BlueCursorView: View {
         let x = screenPoint.x - screenFrame.origin.x
         let y = (screenFrame.origin.y + screenFrame.height) - screenPoint.y
         return CGPoint(x: x, y: y)
+    }
+
+    /// The live-mode arrow targets that fall on THIS screen, converted to this
+    /// overlay's SwiftUI coordinate space and ready for the Canvas to draw.
+    private var liveArrowMarkersForThisScreen: [LiveArrowMarker] {
+        companionManager.liveArrowTargets.compactMap { target in
+            guard screenFrame.contains(target.screenLocation) else { return nil }
+            let pointInSwiftUI = convertScreenPointToSwiftUICoordinates(target.screenLocation)
+            return LiveArrowMarker(
+                id: target.id,
+                point: pointInSwiftUI,
+                label: target.label,
+                stepNumber: target.stepNumber
+            )
+        }
     }
 
     // MARK: - Element Navigation
@@ -668,6 +744,155 @@ struct BlueCursorView: View {
             self.welcomeText.append(self.fullWelcomeMessage[index])
             currentIndex += 1
         }
+    }
+}
+
+// MARK: - Live Arrows
+
+/// A single resolved arrow marker, already converted to one screen's SwiftUI
+/// coordinate space, ready to draw.
+private struct LiveArrowMarker: Identifiable {
+    let id: UUID
+    /// The point on the element the arrow should land on (SwiftUI coords).
+    let point: CGPoint
+    let label: String
+    let stepNumber: Int?
+}
+
+/// Draws the persistent live-mode arrows for one screen using a single Canvas:
+/// for each target, an arrowhead landing on the real control, a connector line,
+/// and a rounded label pill (prefixed with the step number for ordered how-tos).
+/// Fades in when the set of markers changes so new arrows feel intentional.
+private struct LiveArrowsCanvas: View {
+    let markers: [LiveArrowMarker]
+
+    @State private var appearOpacity: Double = 0
+
+    var body: some View {
+        Canvas { context, size in
+            for marker in markers {
+                // Pass the context by value so the per-marker shadow filter
+                // doesn't accumulate across markers.
+                drawArrowMarker(marker, context: context, canvasSize: size)
+            }
+        }
+        .opacity(appearOpacity)
+        .onAppear {
+            appearOpacity = 0
+            withAnimation(.easeOut(duration: 0.35)) { appearOpacity = markers.isEmpty ? 0 : 1 }
+        }
+        .onChange(of: markers.count) { newCount in
+            // Re-run the fade-in whenever the arrows change (e.g. a new answer).
+            appearOpacity = 0
+            withAnimation(.easeOut(duration: 0.35)) { appearOpacity = newCount == 0 ? 0 : 1 }
+        }
+    }
+
+    /// Draws one arrow + label pill. The pill is placed offset from the target
+    /// (flipping side / clamping so it never runs off the screen edge), with the
+    /// connector line drawn first and the pill painted over its near end so the
+    /// arrow reads as emanating from the label.
+    private func drawArrowMarker(_ marker: LiveArrowMarker, context: GraphicsContext, canvasSize: CGSize) {
+        var graphicsContext = context
+        graphicsContext.addFilter(.shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 1))
+
+        let arrowColor = DS.Colors.overlayCursorBlue
+        let targetPoint = marker.point
+
+        // Compose the visible label, prefixing the step number for how-to steps.
+        let displayLabel = marker.stepNumber.map { "\($0). \(marker.label)" } ?? marker.label
+        let labelText = Text(displayLabel)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(.white)
+        let resolvedLabel = graphicsContext.resolve(labelText)
+
+        // Let the pill grow around the text: a long label wraps onto multiple
+        // lines (capped at a comfortable reading width) and the pill's measured
+        // height expands to contain it, rather than the text being truncated to
+        // a single line. The width cap scales down on small screens so the pill
+        // never dominates a narrow display.
+        let smallScreenLabelWidthCap: CGFloat = canvasSize.width * 0.32
+        let maxLabelWidth: CGFloat = min(360, max(180, smallScreenLabelWidthCap))
+        let measuredLabelSize = resolvedLabel.measure(in: CGSize(width: maxLabelWidth, height: 600))
+
+        let pillHorizontalPadding: CGFloat = 11
+        let pillVerticalPadding: CGFloat = 7
+        let pillWidth = measuredLabelSize.width + pillHorizontalPadding * 2
+        let pillHeight = measuredLabelSize.height + pillVerticalPadding * 2
+
+        // Default: pill up and to the right of the target. Flip / clamp so it
+        // always stays fully on-screen.
+        let gapFromTarget: CGFloat = 34
+        var pillCenter = CGPoint(
+            x: targetPoint.x + gapFromTarget + pillWidth / 2,
+            y: targetPoint.y - gapFromTarget - pillHeight / 2
+        )
+        if pillCenter.x + pillWidth / 2 > canvasSize.width - 10 {
+            pillCenter.x = targetPoint.x - gapFromTarget - pillWidth / 2
+        }
+        if pillCenter.y - pillHeight / 2 < 10 {
+            pillCenter.y = targetPoint.y + gapFromTarget + pillHeight / 2
+        }
+        pillCenter.x = min(max(pillCenter.x, pillWidth / 2 + 10), canvasSize.width - pillWidth / 2 - 10)
+        pillCenter.y = min(max(pillCenter.y, pillHeight / 2 + 10), canvasSize.height - pillHeight / 2 - 10)
+
+        let pillRect = CGRect(
+            x: pillCenter.x - pillWidth / 2,
+            y: pillCenter.y - pillHeight / 2,
+            width: pillWidth,
+            height: pillHeight
+        )
+
+        // Connector line from the pill toward the target.
+        var connectorPath = Path()
+        connectorPath.move(to: pillCenter)
+        connectorPath.addLine(to: targetPoint)
+        graphicsContext.stroke(
+            connectorPath,
+            with: .color(arrowColor),
+            style: StrokeStyle(lineWidth: 3, lineCap: .round)
+        )
+
+        // Arrowhead at the target, pointing along the connector direction.
+        let directionAngle = atan2(targetPoint.y - pillCenter.y, targetPoint.x - pillCenter.x)
+        let arrowHeadLength: CGFloat = 14
+        let arrowHeadHalfWidth: CGFloat = 9
+        let arrowBaseCenter = CGPoint(
+            x: targetPoint.x - cos(directionAngle) * arrowHeadLength,
+            y: targetPoint.y - sin(directionAngle) * arrowHeadLength
+        )
+        let arrowBaseLeft = CGPoint(
+            x: arrowBaseCenter.x + cos(directionAngle + .pi / 2) * arrowHeadHalfWidth,
+            y: arrowBaseCenter.y + sin(directionAngle + .pi / 2) * arrowHeadHalfWidth
+        )
+        let arrowBaseRight = CGPoint(
+            x: arrowBaseCenter.x + cos(directionAngle - .pi / 2) * arrowHeadHalfWidth,
+            y: arrowBaseCenter.y + sin(directionAngle - .pi / 2) * arrowHeadHalfWidth
+        )
+        var arrowHeadPath = Path()
+        arrowHeadPath.move(to: targetPoint)
+        arrowHeadPath.addLine(to: arrowBaseLeft)
+        arrowHeadPath.addLine(to: arrowBaseRight)
+        arrowHeadPath.closeSubpath()
+        graphicsContext.fill(arrowHeadPath, with: .color(arrowColor))
+
+        // A ring on the element itself so the exact target is obvious.
+        let targetRingRect = CGRect(x: targetPoint.x - 7, y: targetPoint.y - 7, width: 14, height: 14)
+        graphicsContext.stroke(Path(ellipseIn: targetRingRect), with: .color(arrowColor), lineWidth: 3)
+
+        // The label pill, painted over the near end of the connector line, then
+        // the label text on top. The corner radius is capped so a tall, wrapped
+        // multi-line pill keeps gently rounded corners instead of becoming a huge
+        // stadium oval (which `pillHeight / 2` would produce once it's multi-line).
+        let pillCornerRadius = min(pillHeight / 2, 13)
+        let pillPath = Path(roundedRect: pillRect, cornerRadius: pillCornerRadius, style: .continuous)
+        graphicsContext.fill(pillPath, with: .color(arrowColor))
+
+        // Draw the label INSIDE the padded rect so it wraps to the measured size,
+        // rather than `draw(_:at:)` which lays the text out on a single line and
+        // truncates anything past the pill's width.
+        let labelRect = pillRect.insetBy(dx: pillHorizontalPadding, dy: pillVerticalPadding)
+        graphicsContext.draw(resolvedLabel, in: labelRect)
     }
 }
 
