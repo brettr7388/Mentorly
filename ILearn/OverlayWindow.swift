@@ -759,6 +759,112 @@ private struct LiveArrowMarker: Identifiable {
     let stepNumber: Int?
 }
 
+/// Shared geometry for a live-mode arrow marker, used both to DRAW it
+/// (`LiveArrowsCanvas`) and to HIT-TEST a click against it (so clicking an arrow
+/// can dismiss it). All math is in one screen's SwiftUI coordinate space
+/// (top-left origin). Keeping the pill placement here means the clickable region
+/// can never drift from what's actually drawn.
+enum LiveArrowGeometry {
+    static let pillHorizontalPadding: CGFloat = 11
+    static let pillVerticalPadding: CGFloat = 7
+
+    /// Extra slack around the target point (arrowhead + ring + connector tip)
+    /// that still counts as "clicking the arrow".
+    static let targetHitRadius: CGFloat = 30
+
+    /// The visible label, prefixing the step number for ordered how-to steps.
+    static func displayLabel(label: String, stepNumber: Int?) -> String {
+        stepNumber.map { "\($0). \(label)" } ?? label
+    }
+
+    /// The label wraps at a comfortable reading width that scales down on small
+    /// screens so the pill never dominates a narrow display.
+    static func maxLabelWidth(forCanvasWidth canvasWidth: CGFloat) -> CGFloat {
+        let smallScreenLabelWidthCap = canvasWidth * 0.32
+        return min(360, max(180, smallScreenLabelWidthCap))
+    }
+
+    /// Places the label pill relative to the target: up-and-to-the-right by
+    /// default, flipping side / clamping so it always stays fully on-screen.
+    static func pillRect(targetPoint: CGPoint, labelSize: CGSize, canvasSize: CGSize) -> CGRect {
+        let pillWidth = labelSize.width + pillHorizontalPadding * 2
+        let pillHeight = labelSize.height + pillVerticalPadding * 2
+
+        let gapFromTarget: CGFloat = 34
+        var pillCenter = CGPoint(
+            x: targetPoint.x + gapFromTarget + pillWidth / 2,
+            y: targetPoint.y - gapFromTarget - pillHeight / 2
+        )
+        if pillCenter.x + pillWidth / 2 > canvasSize.width - 10 {
+            pillCenter.x = targetPoint.x - gapFromTarget - pillWidth / 2
+        }
+        if pillCenter.y - pillHeight / 2 < 10 {
+            pillCenter.y = targetPoint.y + gapFromTarget + pillHeight / 2
+        }
+        pillCenter.x = min(max(pillCenter.x, pillWidth / 2 + 10), canvasSize.width - pillWidth / 2 - 10)
+        pillCenter.y = min(max(pillCenter.y, pillHeight / 2 + 10), canvasSize.height - pillHeight / 2 - 10)
+
+        return CGRect(
+            x: pillCenter.x - pillWidth / 2,
+            y: pillCenter.y - pillHeight / 2,
+            width: pillWidth,
+            height: pillHeight
+        )
+    }
+
+    /// Measures the label the way the pill will, but using AppKit text metrics so
+    /// hit-testing code (which has no `GraphicsContext`) can size the pill. It's
+    /// close enough to the Canvas's own measurement that the hit region's slack
+    /// covers the small difference.
+    static func approximateLabelSize(forDisplayLabel displayLabel: String, canvasSize: CGSize) -> CGSize {
+        let maxWidth = maxLabelWidth(forCanvasWidth: canvasSize.width)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+        ]
+        let boundingRect = (displayLabel as NSString).boundingRect(
+            with: CGSize(width: maxWidth, height: 600),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attributes
+        )
+        return CGSize(width: ceil(boundingRect.width), height: ceil(boundingRect.height))
+    }
+
+    /// Whether a left-click at `globalScreenPoint` (AppKit global coords,
+    /// bottom-left origin — i.e. `NSEvent.mouseLocation`) lands on the arrow
+    /// drawn for `target`. Finds the screen the target is on, converts both
+    /// points into that screen's SwiftUI space, and reuses the drawing geometry,
+    /// counting a hit either near the arrow's target or on its label pill.
+    static func arrowDismissHitTest(globalScreenPoint: CGPoint, target: LiveArrowTarget) -> Bool {
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(target.screenLocation) })
+                ?? NSScreen.main else {
+            return false
+        }
+        let screenFrame = screen.frame
+        let canvasSize = screenFrame.size
+
+        func convertGlobalScreenPointToSwiftUICoordinates(_ globalScreenPoint: CGPoint) -> CGPoint {
+            CGPoint(
+                x: globalScreenPoint.x - screenFrame.origin.x,
+                y: (screenFrame.origin.y + screenFrame.height) - globalScreenPoint.y
+            )
+        }
+
+        let targetPoint = convertGlobalScreenPointToSwiftUICoordinates(target.screenLocation)
+        let clickPoint = convertGlobalScreenPointToSwiftUICoordinates(globalScreenPoint)
+        let labelSize = approximateLabelSize(
+            forDisplayLabel: displayLabel(label: target.label, stepNumber: target.stepNumber),
+            canvasSize: canvasSize
+        )
+        let pillRect = pillRect(targetPoint: targetPoint, labelSize: labelSize, canvasSize: canvasSize)
+
+        let distanceToTarget = hypot(clickPoint.x - targetPoint.x, clickPoint.y - targetPoint.y)
+        if distanceToTarget <= targetHitRadius {
+            return true
+        }
+        return pillRect.insetBy(dx: -8, dy: -8).contains(clickPoint)
+    }
+}
+
 /// Draws the persistent live-mode arrows for one screen using a single Canvas:
 /// for each target, an arrowhead landing on the real control, a connector line,
 /// and a rounded label pill (prefixed with the step number for ordered how-tos).
@@ -800,7 +906,7 @@ private struct LiveArrowsCanvas: View {
         let targetPoint = marker.point
 
         // Compose the visible label, prefixing the step number for how-to steps.
-        let displayLabel = marker.stepNumber.map { "\($0). \(marker.label)" } ?? marker.label
+        let displayLabel = LiveArrowGeometry.displayLabel(label: marker.label, stepNumber: marker.stepNumber)
         let labelText = Text(displayLabel)
             .font(.system(size: 12, weight: .semibold))
             .foregroundColor(.white)
@@ -809,39 +915,22 @@ private struct LiveArrowsCanvas: View {
         // Let the pill grow around the text: a long label wraps onto multiple
         // lines (capped at a comfortable reading width) and the pill's measured
         // height expands to contain it, rather than the text being truncated to
-        // a single line. The width cap scales down on small screens so the pill
-        // never dominates a narrow display.
-        let smallScreenLabelWidthCap: CGFloat = canvasSize.width * 0.32
-        let maxLabelWidth: CGFloat = min(360, max(180, smallScreenLabelWidthCap))
+        // a single line.
+        let maxLabelWidth = LiveArrowGeometry.maxLabelWidth(forCanvasWidth: canvasSize.width)
         let measuredLabelSize = resolvedLabel.measure(in: CGSize(width: maxLabelWidth, height: 600))
 
-        let pillHorizontalPadding: CGFloat = 11
-        let pillVerticalPadding: CGFloat = 7
-        let pillWidth = measuredLabelSize.width + pillHorizontalPadding * 2
-        let pillHeight = measuredLabelSize.height + pillVerticalPadding * 2
-
-        // Default: pill up and to the right of the target. Flip / clamp so it
-        // always stays fully on-screen.
-        let gapFromTarget: CGFloat = 34
-        var pillCenter = CGPoint(
-            x: targetPoint.x + gapFromTarget + pillWidth / 2,
-            y: targetPoint.y - gapFromTarget - pillHeight / 2
+        // Place the pill via the shared geometry so the region used to dismiss
+        // the arrow on click stays in lockstep with what's drawn here.
+        let pillHorizontalPadding = LiveArrowGeometry.pillHorizontalPadding
+        let pillVerticalPadding = LiveArrowGeometry.pillVerticalPadding
+        let pillRect = LiveArrowGeometry.pillRect(
+            targetPoint: targetPoint,
+            labelSize: measuredLabelSize,
+            canvasSize: canvasSize
         )
-        if pillCenter.x + pillWidth / 2 > canvasSize.width - 10 {
-            pillCenter.x = targetPoint.x - gapFromTarget - pillWidth / 2
-        }
-        if pillCenter.y - pillHeight / 2 < 10 {
-            pillCenter.y = targetPoint.y + gapFromTarget + pillHeight / 2
-        }
-        pillCenter.x = min(max(pillCenter.x, pillWidth / 2 + 10), canvasSize.width - pillWidth / 2 - 10)
-        pillCenter.y = min(max(pillCenter.y, pillHeight / 2 + 10), canvasSize.height - pillHeight / 2 - 10)
-
-        let pillRect = CGRect(
-            x: pillCenter.x - pillWidth / 2,
-            y: pillCenter.y - pillHeight / 2,
-            width: pillWidth,
-            height: pillHeight
-        )
+        let pillWidth = pillRect.width
+        let pillHeight = pillRect.height
+        let pillCenter = CGPoint(x: pillRect.midX, y: pillRect.midY)
 
         // Connector line from the pill toward the target.
         var connectorPath = Path()

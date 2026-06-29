@@ -207,12 +207,20 @@ final class CompanionManager: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "hasCompletedOnboarding") }
     }
 
+    /// Global mouse monitor that lets the user dismiss a live arrow by clicking
+    /// on it. It is listen-only (it never consumes the click), so clicking
+    /// anywhere else — or clicking the very control the arrow points at —
+    /// behaves exactly as before; only a click that lands on the arrow's marker
+    /// clears it.
+    private var liveArrowDismissClickMonitor: Any?
+
     func start() {
         refreshAllPermissions()
         print("🔑 ILearn start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), screenContent: \(hasScreenContentPermission), onboarded: \(hasCompletedOnboarding)")
         startPermissionPolling()
         bindShortcutTransitions()
         startAccessibilityWarmup()
+        startLiveArrowDismissClickMonitor()
         // Eagerly instantiate the answer backend. For the Worker/API path this
         // kicks off its TLS warmup handshake well before the onboarding demo
         // fires; for the CLI path it's a cheap no-op.
@@ -293,8 +301,46 @@ final class CompanionManager: ObservableObject {
         liveArrowTargets = []
     }
 
+    /// Installs the global click monitor used to dismiss a live arrow by clicking
+    /// it. Safe to call repeatedly — it only installs the monitor once.
+    private func startLiveArrowDismissClickMonitor() {
+        guard liveArrowDismissClickMonitor == nil else { return }
+        liveArrowDismissClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown]
+        ) { [weak self] _ in
+            // Global monitor handlers fire on the main thread; capture the click
+            // location now and hand off to the @MainActor dismiss logic.
+            let clickLocationInGlobalScreenCoordinates = NSEvent.mouseLocation
+            Task { @MainActor in
+                self?.dismissLiveArrowIfClicked(
+                    atGlobalScreenPoint: clickLocationInGlobalScreenCoordinates
+                )
+            }
+        }
+    }
+
+    /// Clears any live arrow whose on-screen marker contains the clicked point,
+    /// so clicking an arrow makes it disappear. Any other arrows are left in
+    /// place (in practice there is only one arrow at a time).
+    private func dismissLiveArrowIfClicked(atGlobalScreenPoint clickPointInGlobalScreenCoordinates: CGPoint) {
+        guard !liveArrowTargets.isEmpty else { return }
+        let remainingArrows = liveArrowTargets.filter { liveArrowTarget in
+            !LiveArrowGeometry.arrowDismissHitTest(
+                globalScreenPoint: clickPointInGlobalScreenCoordinates,
+                target: liveArrowTarget
+            )
+        }
+        if remainingArrows.count != liveArrowTargets.count {
+            liveArrowTargets = remainingArrows
+        }
+    }
+
     func stop() {
         globalAskShortcutMonitor.stop()
+        if let liveArrowDismissClickMonitor {
+            NSEvent.removeMonitor(liveArrowDismissClickMonitor)
+            self.liveArrowDismissClickMonitor = nil
+        }
         pendingAskFlowTask?.cancel()
         pendingAskFlowTask = nil
         askWindowManager.hideAskWindow()

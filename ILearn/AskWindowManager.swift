@@ -178,6 +178,18 @@ final class AskWindowManager: NSObject {
                 panel.animator().alphaValue = 1
             }
         }
+
+        // Put the cursor in the question field so the user can type the instant
+        // the box appears, without clicking it first. Setting `@FocusState` in the
+        // view's `onAppear` races the panel becoming key — SwiftUI assigns focus
+        // before the window is actually key and it silently drops. Re-asserting on
+        // the next runloop tick, once the panel is key, makes the field reliably
+        // first responder. (The panel is a nonactivating `KeyablePanel`, so it can
+        // hold keyboard focus without ILearn stealing frontmost from the user's app.)
+        DispatchQueue.main.async { [weak self] in
+            self?.panel?.makeKey()
+            self?.viewModel.presentationToken = UUID()
+        }
     }
 
     /// Switches the live box from the question field to the streaming answer,
