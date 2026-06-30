@@ -33,8 +33,8 @@ export PATH="/opt/homebrew/bin:$PATH"
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-SCHEME="ILearn"
-APP_NAME="ILearn"
+SCHEME="ILearn"        # Xcode scheme/target name (unchanged)
+APP_NAME="Mentorly"    # built product name (PRODUCT_NAME) → Mentorly.app / Mentorly.dmg
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${PROJECT_DIR}/build"
 ARCHIVE_PATH="${BUILD_DIR}/${APP_NAME}.xcarchive"
@@ -43,7 +43,7 @@ DMG_OUTPUT_DIR="${BUILD_DIR}/dmg"
 RELEASES_DIR="${PROJECT_DIR}/releases"  # where generate_appcast reads DMGs from
 DMG_BACKGROUND="${PROJECT_DIR}/dmg-background.png"
 
-GITHUB_REPO="your-github-username/your-releases-repo"  # TODO: point this at your own releases repo before using this script
+GITHUB_REPO="brettr7388/iLearn"  # releases (DMGs) + appcast.xml are published here
 
 # Sparkle tools (auto-discovered from Xcode's SPM cache)
 SPARKLE_BIN=$(find ~/Library/Developer/Xcode/DerivedData/ILearn*/SourcePackages/artifacts/sparkle/Sparkle/bin -maxdepth 0 2>/dev/null | head -1)

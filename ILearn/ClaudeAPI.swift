@@ -14,11 +14,14 @@ class ClaudeAPI: ClaudeBackend {
 
     private let apiURL: URL
     var model: String
+    /// Shared secret presented to the Worker as a bearer token, if configured.
+    private let authToken: String?
     private let session: URLSession
 
-    init(proxyURL: String, model: String = "claude-sonnet-4-6") {
+    init(proxyURL: String, model: String = "claude-sonnet-4-6", authToken: String? = nil) {
         self.apiURL = URL(string: proxyURL)!
         self.model = model
+        self.authToken = authToken
 
         // Use .default instead of .ephemeral so TLS session tickets are cached.
         // Ephemeral sessions do a full TLS handshake on every request, which causes
@@ -43,6 +46,11 @@ class ClaudeAPI: ClaudeBackend {
         request.httpMethod = "POST"
         request.timeoutInterval = 120
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Present the shared secret so the Worker (which holds the real API key)
+        // only answers requests from this app, not anyone who finds the URL.
+        if let authToken {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
         return request
     }
 

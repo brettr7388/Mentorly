@@ -1,3 +1,17 @@
 name = "ilearn-proxy"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
+
+# Secrets (set with `npx wrangler secret put <NAME>`):
+#   ANTHROPIC_API_KEY  — your Anthropic API key (never shipped in the app)
+#   PROXY_AUTH_TOKEN   — shared secret the app must present as a bearer token.
+#                        Set the SAME value in the app with:
+#                        defaults write com.ilearn.app workerAuthToken "<token>"
+
+# Optional per-client rate limiting. Uncomment, then `npx wrangler deploy`.
+# Keyed by client IP in src/index.ts; returns 429 when exceeded.
+# [[unsafe.bindings]]
+# name = "RATE_LIMITER"
+# type = "ratelimit"
+# namespace_id = "1001"                  # any unique number for this account
+# simple = { limit = 60, period = 60 }   # 60 requests per 60s per client IP
