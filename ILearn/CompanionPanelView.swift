@@ -29,6 +29,18 @@ struct CompanionPanelView: View {
 
                 modelPickerRow
                     .padding(.horizontal, 16)
+
+                Spacer()
+                    .frame(height: 12)
+
+                arrowStyleSection
+                    .padding(.horizontal, 16)
+
+                Spacer()
+                    .frame(height: 12)
+
+                cursorStyleSection
+                    .padding(.horizontal, 16)
             }
 
             if !companionManager.allPermissionsGranted {
@@ -82,7 +94,7 @@ struct CompanionPanelView: View {
                     .frame(width: 8, height: 8)
                     .shadow(color: statusDotColor.opacity(0.6), radius: 4)
 
-                Text("ILearn")
+                Text("Mentorly")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(DS.Colors.textPrimary)
             }
@@ -117,12 +129,12 @@ struct CompanionPanelView: View {
     @ViewBuilder
     private var permissionsCopySection: some View {
         if companionManager.hasCompletedOnboarding && companionManager.allPermissionsGranted {
-            Text("Press Control+Z to ask about anything on screen.")
+            Text("Press Control+X to ask about anything on screen.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(DS.Colors.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if companionManager.allPermissionsGranted {
-            Text("You're all set. Hit Start to meet ILearn.")
+            Text("You're all set. Hit Start to meet Mentorly.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(DS.Colors.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -133,7 +145,7 @@ struct CompanionPanelView: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(DS.Colors.textSecondary)
 
-                Text("Some permissions were revoked. Grant all three below to keep using ILearn.")
+                Text("Some permissions were revoked. Grant the ones below to keep using Mentorly.")
                     .font(.system(size: 11))
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -141,16 +153,16 @@ struct CompanionPanelView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             VStack(alignment: .leading, spacing: 6) {
-                Text("This is ILearn.")
+                Text("This is Mentorly.")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(DS.Colors.textSecondary)
 
-                Text("Drag-select anything on your screen, ask about it, and get a beginner-friendly explanation.")
+                Text("Press Control+X, ask about anything on your screen, and get a beginner-friendly explanation with arrows pointing right at what matters.")
                     .font(.system(size: 11))
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("Nothing runs in the background. ILearn only captures the region you drag-select after you press the hotkey.")
+                Text("Nothing runs in the background. Mentorly only looks at your screen when you press the hotkey to ask.")
                     .font(.system(size: 11))
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -440,7 +452,7 @@ struct CompanionPanelView: View {
                     .foregroundColor(DS.Colors.textTertiary)
                     .frame(width: 16)
 
-                Text("Show ILearn")
+                Text("Show Mentorly")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(DS.Colors.textSecondary)
             }
@@ -504,6 +516,144 @@ struct CompanionPanelView: View {
         .pointerCursor()
     }
 
+    // MARK: - Arrow Style
+
+    /// Lets the user change the size of the live arrows and pick a color. The
+    /// color selector here is shared: it drives BOTH the arrows and the
+    /// cursor/pointer (see `cursorStyleSection`, which only carries size).
+    /// Mirrors the model picker's compact segmented style.
+    private var arrowStyleSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Arrow size")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(DS.Colors.textSecondary)
+
+                Spacer()
+
+                HStack(spacing: 0) {
+                    ForEach(CompanionManager.ArrowSize.allCases) { size in
+                        arrowSizeOptionButton(size)
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
+                )
+            }
+
+            // Single shared color selector — drives BOTH the live arrows and the
+            // cursor/pointer, so there's never a mismatched pair of pickers.
+            HStack {
+                Text("Color")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(DS.Colors.textSecondary)
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    ForEach(CompanionManager.arrowColorPresets, id: \.hex) { preset in
+                        arrowColorSwatch(hex: preset.hex)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func arrowSizeOptionButton(_ size: CompanionManager.ArrowSize) -> some View {
+        let isSelected = companionManager.arrowSize == size
+        return Button(action: {
+            companionManager.arrowSize = size
+        }) {
+            Text(size.displayName)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(isSelected ? DS.Colors.textPrimary : DS.Colors.textTertiary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(isSelected ? Color.white.opacity(0.1) : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+    }
+
+    private func arrowColorSwatch(hex: String) -> some View {
+        let isSelected = companionManager.arrowColorHex == hex
+        return Button(action: {
+            companionManager.arrowColorHex = hex
+        }) {
+            Circle()
+                .fill(Color(hex: hex))
+                .frame(width: 18, height: 18)
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.white, lineWidth: isSelected ? 2 : 0)
+                )
+                .overlay(
+                    Circle()
+                        .strokeBorder(DS.Colors.borderSubtle, lineWidth: 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+    }
+
+    // MARK: - Cursor Style
+
+    /// Lets the user change the size of the blue cursor/pointer that follows the
+    /// mouse. Color is deliberately omitted here — the pointer shares the single
+    /// "Color" selector in `arrowStyleSection`, so arrows and cursor always match.
+    private var cursorStyleSection: some View {
+        HStack {
+            Text("Cursor size")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(DS.Colors.textSecondary)
+
+            Spacer()
+
+            HStack(spacing: 0) {
+                ForEach(CompanionManager.ArrowSize.allCases) { size in
+                    cursorSizeOptionButton(size)
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
+            )
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func cursorSizeOptionButton(_ size: CompanionManager.ArrowSize) -> some View {
+        let isSelected = companionManager.cursorSize == size
+        return Button(action: {
+            companionManager.cursorSize = size
+        }) {
+            Text(size.displayName)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(isSelected ? DS.Colors.textPrimary : DS.Colors.textTertiary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(isSelected ? Color.white.opacity(0.1) : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+    }
+
     // MARK: - Footer
 
     private var footerSection: some View {
@@ -514,7 +664,7 @@ struct CompanionPanelView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "power")
                         .font(.system(size: 11, weight: .medium))
-                    Text("Quit ILearn")
+                    Text("Quit Mentorly")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundColor(DS.Colors.textTertiary)

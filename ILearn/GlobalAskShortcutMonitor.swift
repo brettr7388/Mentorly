@@ -2,7 +2,7 @@
 //  GlobalAskShortcutMonitor.swift
 //  ILearn
 //
-//  Captures the global "ask ILearn" keyboard shortcut (Control+Z) while the
+//  Captures the global "ask ILearn" keyboard shortcut (Control+X) while the
 //  app is running in the background. Uses a listen-only CGEvent tap so the
 //  shortcut works system-wide even when another app is focused.
 //
@@ -12,10 +12,10 @@ import Combine
 import CoreGraphics
 import Foundation
 
-/// The single hardcoded shortcut that opens the Ask Window. Control+Z is used
+/// The single hardcoded shortcut that opens the Ask Window. Control+X is used
 /// here; note the tap is listen-only, so it never swallows the keystroke —
-/// Control+Z still works normally elsewhere (and macOS undo is Command+Z, not
-/// Control+Z, so there's no undo conflict).
+/// Control+X still works normally elsewhere (and macOS cut is Command+X, not
+/// Control+X, so there's no cut conflict).
 enum AskShortcut {
     enum Transition {
         case none
@@ -23,10 +23,10 @@ enum AskShortcut {
         case released
     }
 
-    static let displayText = "control + z"
+    static let displayText = "control + x"
 
-    /// Virtual keycode for the "Z" key (kVK_ANSI_Z).
-    private static let askKeyCode: UInt16 = 6
+    /// Virtual keycode for the "X" key (kVK_ANSI_X).
+    private static let askKeyCode: UInt16 = 7
     private static let requiredModifierFlags: NSEvent.ModifierFlags = [.control]
 
     static func transition(

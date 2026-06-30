@@ -102,43 +102,6 @@ final class AskWindowManager: NSObject {
     /// Gap between the box and the bottom edge of the screen's usable area.
     private let liveBottomMargin: CGFloat = 40
 
-    /// Shows the window centered on the screen the cursor is currently on,
-    /// with the question text field focused and ready for typing.
-    func showAskWindow(
-        screenshotPreviewImage: NSImage?,
-        onSubmit: @escaping (String) -> Void,
-        onCancel: @escaping () -> Void
-    ) {
-        onSubmitCallback = onSubmit
-        onCancelCallback = onCancel
-        viewModel.screenshotPreviewImage = screenshotPreviewImage
-        viewModel.questionText = ""
-        viewModel.submittedQuestionText = ""
-        viewModel.streamingAnswerText = ""
-        viewModel.answerAnnotatedImage = nil
-        viewModel.isComposing = true
-        viewModel.isAnswerComplete = false
-        viewModel.isLiveMode = false
-        viewModel.presentationToken = UUID()
-
-        if panel == nil {
-            createPanel()
-        }
-
-        // Always (re)open at the small compose size, centered fresh.
-        centerPanel(size: composeWindowSize, animated: false)
-
-        panel?.alphaValue = 0
-        panel?.makeKeyAndOrderFront(nil)
-        panel?.orderFrontRegardless()
-        if let panel {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = DS.Animation.normal
-                panel.animator().alphaValue = 1
-            }
-        }
-    }
-
     // MARK: - Live mode
 
     /// Shows the small live-mode ask box anchored at the bottom-center of the
@@ -664,8 +627,11 @@ private struct AskWindowContentView: View {
         HStack(spacing: DS.Spacing.sm) {
             ILearnLogoBadge()
 
-            Text("ILearn")
-                .font(.system(size: 15, weight: .semibold))
+            // The wordmark is deliberately larger + heavier than the composer
+            // text below it, so the brand title reads as a heading and never
+            // gets visually confused with the question the user types.
+            Text("Mentorly")
+                .font(.system(size: 18, weight: .bold))
                 .foregroundColor(DS.Colors.textPrimary)
 
             Spacer()
@@ -717,13 +683,15 @@ private struct AskWindowContentView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: DS.Spacing.sm) {
                 // The system overrides a TextField `prompt:` color, so the
-                // placeholder is drawn as our own white Text behind the field
-                // (shown only while the field is empty) to get true white.
+                // placeholder is drawn as our own Text behind the field (shown
+                // only while the field is empty). It's deliberately a dimmed
+                // secondary tone — not the brand's bright white — so the prompt
+                // reads as an input hint and stays distinct from the wordmark.
                 ZStack(alignment: .leading) {
                     if viewModel.questionText.isEmpty {
-                        Text(viewModel.isLiveMode ? "ask ilearn about your screen..." : "ask ilearn about this...")
+                        Text(viewModel.isLiveMode ? "ask mentorly about your screen..." : "ask mentorly about this...")
                             .font(.system(size: 15))
-                            .foregroundColor(.white)
+                            .foregroundColor(DS.Colors.textSecondary)
                             .allowsHitTesting(false)
                     }
 

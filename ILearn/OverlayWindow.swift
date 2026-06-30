@@ -188,7 +188,7 @@ struct BlueCursorView: View {
     /// Only during the return flight can cursor movement cancel the animation.
     @State private var isReturningToCursor: Bool = false
 
-    private let fullWelcomeMessage = "hey! i'm your ilearn buddy"
+    private let fullWelcomeMessage = "hey! i'm your mentorly buddy"
 
     private let navigationPointerPhrases = [
         "right here!",
@@ -335,10 +335,10 @@ struct BlueCursorView: View {
             // During navigation: NO implicit animation — the frame-by-frame bezier
             // timer controls position directly at 60fps for a smooth arc flight.
             Triangle()
-                .fill(DS.Colors.overlayCursorBlue)
-                .frame(width: 16, height: 16)
+                .fill(companionManager.arrowColor)
+                .frame(width: 16 * companionManager.cursorSizeScale, height: 16 * companionManager.cursorSizeScale)
                 .rotationEffect(.degrees(triangleRotationDegrees))
-                .shadow(color: DS.Colors.overlayCursorBlue, radius: 8 + (buddyFlightScale - 1.0) * 20, x: 0, y: 0)
+                .shadow(color: companionManager.arrowColor, radius: 8 + (buddyFlightScale - 1.0) * 20, x: 0, y: 0)
                 .scaleEffect(buddyFlightScale)
                 .opacity(buddyIsVisibleOnThisScreen && companionManager.askState == .idle ? cursorOpacity : 0)
                 .position(cursorPosition)
@@ -354,8 +354,12 @@ struct BlueCursorView: View {
                     value: triangleRotationDegrees
                 )
 
-            // Blue spinner — shown while the AI is processing the ask
-            BlueCursorSpinnerView()
+            // Blue spinner — shown while the AI is processing the ask. Matches
+            // the shared arrow color + the cursor size so the buddy stays cohesive.
+            BlueCursorSpinnerView(
+                cursorColor: companionManager.arrowColor,
+                sizeScale: companionManager.cursorSizeScale
+            )
                 .opacity(buddyIsVisibleOnThisScreen && companionManager.askState == .processing ? cursorOpacity : 0)
                 .position(cursorPosition)
                 .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
@@ -365,7 +369,11 @@ struct BlueCursorView: View {
             // controls (live mode). Drawn on top of everything else, never
             // intercepting clicks. Only the targets that fall on THIS screen
             // are drawn here; each screen's overlay handles its own.
-            LiveArrowsCanvas(markers: liveArrowMarkersForThisScreen)
+            LiveArrowsCanvas(
+                markers: liveArrowMarkersForThisScreen,
+                arrowColor: companionManager.arrowColor,
+                sizeScale: companionManager.arrowSizeScale
+            )
                 .allowsHitTesting(false)
         }
         .frame(width: screenFrame.width, height: screenFrame.height)
@@ -786,9 +794,9 @@ enum LiveArrowGeometry {
 
     /// Places the label pill relative to the target: up-and-to-the-right by
     /// default, flipping side / clamping so it always stays fully on-screen.
-    static func pillRect(targetPoint: CGPoint, labelSize: CGSize, canvasSize: CGSize) -> CGRect {
-        let pillWidth = labelSize.width + pillHorizontalPadding * 2
-        let pillHeight = labelSize.height + pillVerticalPadding * 2
+    static func pillRect(targetPoint: CGPoint, labelSize: CGSize, canvasSize: CGSize, scale: CGFloat = 1) -> CGRect {
+        let pillWidth = labelSize.width + pillHorizontalPadding * scale * 2
+        let pillHeight = labelSize.height + pillVerticalPadding * scale * 2
 
         let gapFromTarget: CGFloat = 34
         var pillCenter = CGPoint(
@@ -816,10 +824,10 @@ enum LiveArrowGeometry {
     /// hit-testing code (which has no `GraphicsContext`) can size the pill. It's
     /// close enough to the Canvas's own measurement that the hit region's slack
     /// covers the small difference.
-    static func approximateLabelSize(forDisplayLabel displayLabel: String, canvasSize: CGSize) -> CGSize {
+    static func approximateLabelSize(forDisplayLabel displayLabel: String, canvasSize: CGSize, scale: CGFloat = 1) -> CGSize {
         let maxWidth = maxLabelWidth(forCanvasWidth: canvasSize.width)
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+            .font: NSFont.systemFont(ofSize: 12 * scale, weight: .semibold)
         ]
         let boundingRect = (displayLabel as NSString).boundingRect(
             with: CGSize(width: maxWidth, height: 600),
@@ -834,7 +842,7 @@ enum LiveArrowGeometry {
     /// drawn for `target`. Finds the screen the target is on, converts both
     /// points into that screen's SwiftUI space, and reuses the drawing geometry,
     /// counting a hit either near the arrow's target or on its label pill.
-    static func arrowDismissHitTest(globalScreenPoint: CGPoint, target: LiveArrowTarget) -> Bool {
+    static func arrowDismissHitTest(globalScreenPoint: CGPoint, target: LiveArrowTarget, scale: CGFloat = 1) -> Bool {
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(target.screenLocation) })
                 ?? NSScreen.main else {
             return false
@@ -853,12 +861,13 @@ enum LiveArrowGeometry {
         let clickPoint = convertGlobalScreenPointToSwiftUICoordinates(globalScreenPoint)
         let labelSize = approximateLabelSize(
             forDisplayLabel: displayLabel(label: target.label, stepNumber: target.stepNumber),
-            canvasSize: canvasSize
+            canvasSize: canvasSize,
+            scale: scale
         )
-        let pillRect = pillRect(targetPoint: targetPoint, labelSize: labelSize, canvasSize: canvasSize)
+        let pillRect = pillRect(targetPoint: targetPoint, labelSize: labelSize, canvasSize: canvasSize, scale: scale)
 
         let distanceToTarget = hypot(clickPoint.x - targetPoint.x, clickPoint.y - targetPoint.y)
-        if distanceToTarget <= targetHitRadius {
+        if distanceToTarget <= targetHitRadius * scale {
             return true
         }
         return pillRect.insetBy(dx: -8, dy: -8).contains(clickPoint)
@@ -871,6 +880,8 @@ enum LiveArrowGeometry {
 /// Fades in when the set of markers changes so new arrows feel intentional.
 private struct LiveArrowsCanvas: View {
     let markers: [LiveArrowMarker]
+    let arrowColor: Color
+    let sizeScale: CGFloat
 
     @State private var appearOpacity: Double = 0
 
@@ -902,13 +913,12 @@ private struct LiveArrowsCanvas: View {
         var graphicsContext = context
         graphicsContext.addFilter(.shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 1))
 
-        let arrowColor = DS.Colors.overlayCursorBlue
         let targetPoint = marker.point
 
         // Compose the visible label, prefixing the step number for how-to steps.
         let displayLabel = LiveArrowGeometry.displayLabel(label: marker.label, stepNumber: marker.stepNumber)
         let labelText = Text(displayLabel)
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: 12 * sizeScale, weight: .semibold))
             .foregroundColor(.white)
         let resolvedLabel = graphicsContext.resolve(labelText)
 
@@ -926,7 +936,8 @@ private struct LiveArrowsCanvas: View {
         let pillRect = LiveArrowGeometry.pillRect(
             targetPoint: targetPoint,
             labelSize: measuredLabelSize,
-            canvasSize: canvasSize
+            canvasSize: canvasSize,
+            scale: sizeScale
         )
         let pillWidth = pillRect.width
         let pillHeight = pillRect.height
@@ -939,13 +950,13 @@ private struct LiveArrowsCanvas: View {
         graphicsContext.stroke(
             connectorPath,
             with: .color(arrowColor),
-            style: StrokeStyle(lineWidth: 3, lineCap: .round)
+            style: StrokeStyle(lineWidth: 3 * sizeScale, lineCap: .round)
         )
 
         // Arrowhead at the target, pointing along the connector direction.
         let directionAngle = atan2(targetPoint.y - pillCenter.y, targetPoint.x - pillCenter.x)
-        let arrowHeadLength: CGFloat = 14
-        let arrowHeadHalfWidth: CGFloat = 9
+        let arrowHeadLength: CGFloat = 14 * sizeScale
+        let arrowHeadHalfWidth: CGFloat = 9 * sizeScale
         let arrowBaseCenter = CGPoint(
             x: targetPoint.x - cos(directionAngle) * arrowHeadLength,
             y: targetPoint.y - sin(directionAngle) * arrowHeadLength
@@ -966,21 +977,21 @@ private struct LiveArrowsCanvas: View {
         graphicsContext.fill(arrowHeadPath, with: .color(arrowColor))
 
         // A ring on the element itself so the exact target is obvious.
-        let targetRingRect = CGRect(x: targetPoint.x - 7, y: targetPoint.y - 7, width: 14, height: 14)
-        graphicsContext.stroke(Path(ellipseIn: targetRingRect), with: .color(arrowColor), lineWidth: 3)
+        let targetRingRect = CGRect(x: targetPoint.x - 7 * sizeScale, y: targetPoint.y - 7 * sizeScale, width: 14 * sizeScale, height: 14 * sizeScale)
+        graphicsContext.stroke(Path(ellipseIn: targetRingRect), with: .color(arrowColor), lineWidth: 3 * sizeScale)
 
         // The label pill, painted over the near end of the connector line, then
         // the label text on top. The corner radius is capped so a tall, wrapped
         // multi-line pill keeps gently rounded corners instead of becoming a huge
         // stadium oval (which `pillHeight / 2` would produce once it's multi-line).
-        let pillCornerRadius = min(pillHeight / 2, 13)
+        let pillCornerRadius = min(pillHeight / 2, 13 * sizeScale)
         let pillPath = Path(roundedRect: pillRect, cornerRadius: pillCornerRadius, style: .continuous)
         graphicsContext.fill(pillPath, with: .color(arrowColor))
 
         // Draw the label INSIDE the padded rect so it wraps to the measured size,
         // rather than `draw(_:at:)` which lays the text out on a single line and
         // truncates anything past the pill's width.
-        let labelRect = pillRect.insetBy(dx: pillHorizontalPadding, dy: pillVerticalPadding)
+        let labelRect = pillRect.insetBy(dx: pillHorizontalPadding * sizeScale, dy: pillVerticalPadding * sizeScale)
         graphicsContext.draw(resolvedLabel, in: labelRect)
     }
 }
@@ -990,6 +1001,11 @@ private struct LiveArrowsCanvas: View {
 /// A small blue spinning indicator that replaces the triangle cursor
 /// while the AI is processing an ask.
 private struct BlueCursorSpinnerView: View {
+    /// The user-chosen cursor color, so the processing spinner matches the
+    /// idle triangle pointer rather than always being the default blue.
+    let cursorColor: Color
+    /// The user-chosen cursor size multiplier, applied to the spinner too.
+    let sizeScale: CGFloat
     @State private var isSpinning = false
 
     var body: some View {
@@ -998,16 +1014,16 @@ private struct BlueCursorSpinnerView: View {
             .stroke(
                 AngularGradient(
                     colors: [
-                        DS.Colors.overlayCursorBlue.opacity(0.0),
-                        DS.Colors.overlayCursorBlue
+                        cursorColor.opacity(0.0),
+                        cursorColor
                     ],
                     center: .center
                 ),
                 style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
             )
-            .frame(width: 14, height: 14)
+            .frame(width: 14 * sizeScale, height: 14 * sizeScale)
             .rotationEffect(.degrees(isSpinning ? 360 : 0))
-            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.6), radius: 6, x: 0, y: 0)
+            .shadow(color: cursorColor.opacity(0.6), radius: 6, x: 0, y: 0)
             .onAppear {
                 withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
                     isSpinning = true

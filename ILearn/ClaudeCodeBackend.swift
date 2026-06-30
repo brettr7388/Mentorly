@@ -71,6 +71,60 @@ final class ClaudeCodeBackend: ClaudeBackend {
         }
     }
 
+    /// One interpreted line of the CLI's JSONL stream. Pure (no side effects)
+    /// so it can be unit-tested without spawning the `claude` process.
+    enum StreamLineEvent: Equatable {
+        /// An incremental chunk of the assistant's answer text (for live display).
+        case textDelta(String)
+        /// The terminal, authoritative final answer text.
+        case finalResult(String)
+        /// The run finished but reported an error.
+        case modelError(String)
+        /// A line we don't act on (thinking, tool-call JSON, blank, or malformed).
+        case ignored
+    }
+
+    /// Interprets a single JSONL line from `claude --output-format stream-json`.
+    /// We forward only the assistant's answer text — not its thinking, and not
+    /// the JSON of any tool call it makes to Read the image.
+    static func interpretStreamLine(_ line: String) -> StreamLineEvent {
+        let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmedLine.isEmpty,
+              let lineData = trimmedLine.data(using: .utf8),
+              let event = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+              let eventType = event["type"] as? String else {
+            return .ignored
+        }
+
+        switch eventType {
+        case "stream_event":
+            guard let streamEvent = event["event"] as? [String: Any],
+                  streamEvent["type"] as? String == "content_block_delta",
+                  let delta = streamEvent["delta"] as? [String: Any],
+                  delta["type"] as? String == "text_delta",
+                  let textChunk = delta["text"] as? String else {
+                return .ignored
+            }
+            return .textDelta(textChunk)
+
+        case "result":
+            // Terminal event. `result` holds the final answer text; `is_error`
+            // flags a failed run.
+            if let isError = event["is_error"] as? Bool, isError {
+                let message = (event["result"] as? String)
+                    ?? (event["subtype"] as? String)
+                    ?? "the Claude Code CLI reported an error"
+                return .modelError(message)
+            } else if let resultText = event["result"] as? String {
+                return .finalResult(resultText)
+            }
+            return .ignored
+
+        default:
+            return .ignored
+        }
+    }
+
     func analyzeImageStreaming(
         images: [(data: Data, label: String)],
         systemPrompt: String,
@@ -167,42 +221,19 @@ final class ClaudeCodeBackend: ClaudeBackend {
             // assistant's `text_delta` chunks for live display and prefer the
             // authoritative `result` text once the run finishes.
             for try await line in standardOutputPipe.fileHandleForReading.bytes.lines {
-                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-                guard !trimmedLine.isEmpty,
-                      let lineData = trimmedLine.data(using: .utf8),
-                      let event = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                      let eventType = event["type"] as? String else {
-                    continue
-                }
-
-                switch eventType {
-                case "stream_event":
-                    // Token-level deltas for progressive display. We only want
-                    // the assistant's answer text — not its thinking, and not
-                    // the JSON of any tool call it makes to Read the image.
-                    guard let streamEvent = event["event"] as? [String: Any],
-                          streamEvent["type"] as? String == "content_block_delta",
-                          let delta = streamEvent["delta"] as? [String: Any],
-                          delta["type"] as? String == "text_delta",
-                          let textChunk = delta["text"] as? String else {
-                        continue
-                    }
+                switch Self.interpretStreamLine(line) {
+                case .textDelta(let textChunk):
                     accumulatedAnswerText += textChunk
                     let currentAccumulatedText = accumulatedAnswerText
                     await onTextChunk(currentAccumulatedText)
 
-                case "result":
-                    // Terminal event. `result` holds the final answer text;
-                    // `is_error` flags a failed run.
-                    if let isError = event["is_error"] as? Bool, isError {
-                        modelErrorMessage = (event["result"] as? String)
-                            ?? (event["subtype"] as? String)
-                            ?? "the Claude Code CLI reported an error"
-                    } else if let resultText = event["result"] as? String {
-                        finalResultText = resultText
-                    }
+                case .finalResult(let resultText):
+                    finalResultText = resultText
 
-                default:
+                case .modelError(let message):
+                    modelErrorMessage = message
+
+                case .ignored:
                     continue
                 }
             }

@@ -73,11 +73,15 @@ final class CompanionManager: ObservableObject {
     /// Base URL for the Cloudflare Worker proxy. Only used when the backend is
     /// the paid API path (`useClaudeCodeBackend == false`). Read from
     /// UserDefaults (set once locally via `defaults write`, never committed)
-    /// rather than hardcoded, since the Worker has no auth check — anyone who
-    /// found the real URL in source could run up charges on your Anthropic
-    /// account.
+    /// rather than hardcoded.
     private static let workerBaseURL = UserDefaults.standard.string(forKey: "workerBaseURL")
         ?? "https://your-worker-name.your-subdomain.workers.dev"
+
+    /// Shared secret the Worker requires as a bearer token, so a leaked Worker
+    /// URL can't be used to run up Anthropic charges. Set locally with
+    /// `defaults write com.ilearn.app workerAuthToken "<token>"` — the same value
+    /// stored on the Worker as the `PROXY_AUTH_TOKEN` secret. Never committed.
+    private static let workerAuthToken = UserDefaults.standard.string(forKey: "workerAuthToken")
 
     /// Whether to answer using the local Claude Code CLI (the user's Claude
     /// subscription, no API key, no per-token billing) instead of the
@@ -100,7 +104,7 @@ final class CompanionManager: ObservableObject {
             return ClaudeCodeBackend(model: selectedModel)
         } else {
             print("🧠 ILearn answer backend: Cloudflare Worker (API key)")
-            return ClaudeAPI(proxyURL: "\(Self.workerBaseURL)/chat", model: selectedModel)
+            return ClaudeAPI(proxyURL: "\(Self.workerBaseURL)/chat", model: selectedModel, authToken: Self.workerAuthToken)
         }
     }()
 
@@ -144,7 +148,7 @@ final class CompanionManager: ObservableObject {
     //
     // Browsers/Electron apps keep their web-content accessibility tree OFF until
     // an assistive client asks for it, and building it the first time takes a
-    // beat. If we only flipped that switch when Control+Z is pressed, the very
+    // beat. If we only flipped that switch when Control+X is pressed, the very
     // first ask against a just-opened app would scan a still-empty tree and miss
     // every on-screen control — which is why it used to take TWO presses. To
     // avoid that, we proactively warm each app the moment it becomes frontmost
@@ -176,6 +180,63 @@ final class CompanionManager: ObservableObject {
         UserDefaults.standard.set(model, forKey: "selectedClaudeModel")
         claudeBackend.model = model
     }
+
+    // MARK: - Live arrow appearance (user-customizable)
+
+    /// Size options for the live arrows + labels. `scale` multiplies every drawn
+    /// dimension (connector, arrowhead, target ring, label) so the whole marker
+    /// grows or shrinks together.
+    enum ArrowSize: String, CaseIterable, Identifiable {
+        case small, medium, large
+        var id: String { rawValue }
+        var displayName: String { rawValue.capitalized }
+        var scale: CGFloat {
+            switch self {
+            case .small: return 0.8
+            case .medium: return 1.0
+            case .large: return 1.4
+            }
+        }
+    }
+
+    /// Preset colors offered in the panel for the live arrows. The name is shown
+    /// to the user; the hex is what's stored and drawn. "Blue" is the classic
+    /// default so nothing changes for users who never open the setting.
+    static let arrowColorPresets: [(name: String, hex: String)] = [
+        ("Blue", "#3380FF"),
+        ("Red", "#FF4D4D"),
+        ("Green", "#34C759"),
+        ("Orange", "#FF9F0A"),
+        ("Purple", "#BF5AF2"),
+        ("Pink", "#FF375F"),
+    ]
+
+    /// Hex of the live-arrow color. Persisted; defaults to the classic blue.
+    @Published var arrowColorHex: String = UserDefaults.standard.string(forKey: "arrowColorHex") ?? "#3380FF" {
+        didSet { UserDefaults.standard.set(arrowColorHex, forKey: "arrowColorHex") }
+    }
+
+    /// The SwiftUI color the overlay draws the live arrows with.
+    var arrowColor: Color { Color(hex: arrowColorHex) }
+
+    /// Chosen arrow size. Persisted; the overlay reads `arrowSizeScale`.
+    @Published var arrowSize: ArrowSize = ArrowSize(rawValue: UserDefaults.standard.string(forKey: "arrowSize") ?? "") ?? .medium {
+        didSet { UserDefaults.standard.set(arrowSize.rawValue, forKey: "arrowSize") }
+    }
+
+    /// Multiplier the overlay applies to every drawn live-arrow dimension.
+    var arrowSizeScale: CGFloat { arrowSize.scale }
+
+    /// Chosen cursor size. Persisted; the overlay reads `cursorSizeScale`. Reuses
+    /// the same Small/Medium/Large scale options as the live arrows. The cursor's
+    /// *color* is intentionally NOT separate — it shares the single `arrowColor`
+    /// selector so arrows and the pointer always match.
+    @Published var cursorSize: ArrowSize = ArrowSize(rawValue: UserDefaults.standard.string(forKey: "cursorSize") ?? "") ?? .medium {
+        didSet { UserDefaults.standard.set(cursorSize.rawValue, forKey: "cursorSize") }
+    }
+
+    /// Multiplier the overlay applies to the drawn cursor/pointer dimensions.
+    var cursorSizeScale: CGFloat { cursorSize.scale }
 
     /// User preference for whether the ILearn cursor should be shown.
     /// When toggled off, the overlay is hidden and the ambient buddy is disabled.
@@ -256,7 +317,7 @@ final class CompanionManager: ObservableObject {
     }
 
     /// Begins proactively warming app accessibility trees in the background so
-    /// the first Control+Z never lands on a cold, empty tree (the old
+    /// the first Control+X never lands on a cold, empty tree (the old
     /// "press it twice" problem). Warms whatever app is frontmost right now, then
     /// keeps warming each app as it becomes frontmost.
     private func startAccessibilityWarmup() {
@@ -327,7 +388,8 @@ final class CompanionManager: ObservableObject {
         let remainingArrows = liveArrowTargets.filter { liveArrowTarget in
             !LiveArrowGeometry.arrowDismissHitTest(
                 globalScreenPoint: clickPointInGlobalScreenCoordinates,
-                target: liveArrowTarget
+                target: liveArrowTarget,
+                scale: arrowSizeScale
             )
         }
         if remainingArrows.count != liveArrowTargets.count {
@@ -496,72 +558,11 @@ final class CompanionManager: ObservableObject {
             }
         }
 
-        // Live mode: small ask box + arrows drawn on the real screen. (The old
-        // drag-select static-screenshot flow is `beginAskFlow`, kept for now but
-        // no longer wired to the hotkey.)
+        // Live mode: small ask box + arrows drawn on the real screen.
         beginLiveAskFlow()
     }
 
     // MARK: - Ask Flow
-
-    /// Starts the ask flow: lets the user drag-select a region of their
-    /// screen (the system's own interactive screenshot tool), then shows
-    /// the Ask Window so they can type a question about it.
-    private func beginAskFlow() {
-        guard !isAskFlowInProgress else { return }
-        isAskFlowInProgress = true
-
-        pendingAskFlowTask?.cancel()
-        pendingAskFlowTask = Task {
-            // Show the prompt instantly (no delay before the screenshot tool) and
-            // launch the system selection UI right away. The prompt stays on the
-            // cursor while the user is in screenshot-selection mode, then clears
-            // the moment selection finishes or is cancelled.
-            showCapturePromptForSelection()
-
-            let selectedRegionImageData: Data?
-            do {
-                selectedRegionImageData = try await ScreenRegionCapture.captureUserSelectedRegion()
-            } catch {
-                hideCapturePrompt()
-                print("⚠️ Screen region capture error: \(error)")
-                isAskFlowInProgress = false
-                return
-            }
-
-            hideCapturePrompt()
-
-            guard !Task.isCancelled else {
-                isAskFlowInProgress = false
-                return
-            }
-
-            guard let selectedRegionImageData else {
-                // User pressed Escape during selection — nothing to ask about
-                isAskFlowInProgress = false
-                return
-            }
-
-            let screenshotPreviewImage = NSImage(data: selectedRegionImageData)
-
-            askWindowManager.showAskWindow(
-                screenshotPreviewImage: screenshotPreviewImage,
-                onSubmit: { [weak self] questionText in
-                    self?.isAskFlowInProgress = false
-                    self?.sendQuestionToClaude(questionText: questionText, screenshotImageData: selectedRegionImageData)
-                },
-                onCancel: { [weak self] in
-                    self?.isAskFlowInProgress = false
-                    // If the user closes the window mid-answer, cancel the
-                    // in-flight request and drop the cursor back to its normal
-                    // arrow so it doesn't keep spinning the loading animation.
-                    self?.currentResponseTask?.cancel()
-                    self?.responseWatchdogTask?.cancel()
-                    self?.askState = .idle
-                }
-            )
-        }
-    }
 
     /// Starts the LIVE ask flow: captures the screen and the target app's
     /// on-screen controls UP FRONT (before our own ask box appears, so the box
@@ -573,7 +574,7 @@ final class CompanionManager: ObservableObject {
         isAskFlowInProgress = true
         clearLiveArrows()
 
-        // A fresh Control+Z is a brand-new conversation — clear any history from a
+        // A fresh Control+X is a brand-new conversation — clear any history from a
         // previous session so this isn't one endless thread. (Follow-ups typed in
         // the box keep their history; pressing the hotkey again starts over.)
         conversationHistory.removeAll()
@@ -684,183 +685,41 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    /// Shows the "take a screenshot…" prompt on the cursor immediately (no
-    /// typewriter, no delay) so it's already visible the instant the system
-    /// screenshot-selection UI appears. Paired with `hideCapturePrompt()`, which
-    /// is called as soon as selection finishes or is cancelled.
-    private func showCapturePromptForSelection() {
-        capturePromptText = "take a screenshot for ilearn to see and help"
-        showCapturePrompt = true
-        capturePromptOpacity = 0.0
-        withAnimation(.easeIn(duration: 0.15)) {
-            capturePromptOpacity = 1.0
-        }
-    }
-
-    /// Fades the capture prompt out, then clears it once the fade has played.
-    private func hideCapturePrompt() {
-        withAnimation(.easeOut(duration: 0.15)) {
-            capturePromptOpacity = 0.0
-        }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 170_000_000)
-            showCapturePrompt = false
-            capturePromptText = ""
-        }
-    }
-
     // MARK: - Ask Prompt
 
-    private static let companionAskResponseSystemPrompt = """
-    you're ilearn, a friendly assistant that helps the user understand and do things they're looking at on their screen. the user selected a region of their screen and asked a question about it. the screenshot they selected is shown back to them with YOUR marks drawn on top of it — so you can literally point at things and highlight areas instead of only describing them. this is an ongoing conversation — you remember everything they've asked before.
-
-    rules:
-    - answer the user directly. NEVER narrate your own process or thinking, and never mention tools, files, reading, zooming, or images (no "I'll zoom in", "let me read the file", "using the Read tool", "looking more carefully"). the user only ever sees a clean explanation plus your marks — never a play-by-play of how you produced it. if you can't make something out, just give your best plain-language answer; don't describe the struggle.
-    - explain things in the simplest, most beginner-friendly language possible. assume the user is brand new to this and has zero background knowledge — define every piece of jargon the first time you use it, in plain words. write like you're kindly explaining to a smart friend who has never seen this screen before.
-    - keep the prose SHORT and warm. the marks you draw carry the "where," so your text should carry the "what" and "why" in a sentence or two, not a wall of text. don't repeat in words what an arrow already shows.
-    - never say "simply" or "just" — if it were simple they wouldn't be asking.
-    - don't mention coordinates or the tags in your prose. talk naturally ("the highlighted button", "the area marked 1").
-    - mark what's RELEVANT to the question, and only that. accuracy beats quantity: one arrow on the exact right thing is far better than several where some are guesses or land on the wrong button.
-
-    drawing marks on the screenshot:
-    a faint MAGENTA COORDINATE GRID is drawn on top of the image for you, with numbered lines from 0 to 1000 running across (x, left→right) and down (y, top→bottom). use it to READ each mark's position: find the element, then look at which numbered gridlines it sits between and read off its x and y. x=0 is the left edge, x=1000 the right edge, x=500 the horizontal middle; y=0 is the top edge, y=1000 the bottom edge, y=500 the vertical middle. this grid is the same regardless of the image's real pixel size. put ALL mark tags at the very END of your reply, each on its own line, AFTER your explanation. use marks only when a location on the screenshot actually matters — for a pure-concept question with no specific spot, skip them and just explain.
-
-    IMPORTANT: the magenta grid and its numbers are a measuring tool for YOU only — they are NOT really on the user's screen. never mention the grid, the numbers, or the color magenta in your reply. talk about the actual UI only.
-
-    CRITICAL — only mark what you can actually SEE in this screenshot. a mark in the wrong place is worse than no mark, because the user will look exactly where you point.
-    - only place a mark on an element that is genuinely visible in the image. do NOT guess a location for something that isn't shown. if the thing they're asking about (a button, menu, setting) is not visible in this capture, say so in plain words and tell them where it usually is ("the logout option is usually under your profile icon in the top-right") — and emit NO mark for it.
-    - read the element's position off the grid carefully before writing the numbers. trace down from the element to the nearest x gridline number and across to the nearest y gridline number — don't eyeball it loosely. e.g. a "Star" button sitting two-thirds across and a third of the way down is near x=670, y=330, NOT x=900, y=50.
-    - if you're not confident of an exact spot but the element IS visible, prefer a [BOX] around the general area over a precise [ARROW] — a slightly loose box is more forgiving than a pinpoint that's off.
-
-    - point at one specific thing: [ARROW:x,y:short label]
-    - highlight a whole region or element: [BOX:x1,y1,x2,y2:short label]   (x1,y1 = top-left corner, x2,y2 = bottom-right corner, all 0–1000)
-    - show an ordered how-to ("how do i..."): one [STEP:n:x,y:short instruction] per step, numbered from 1, in order
-
-    how many marks: mark exactly the elements the user needs for THIS question — no more.
-    - if the question is about ONE thing (e.g. "how do i star this repo"), use ONE precise arrow on that one element. do NOT add arrows to nearby buttons (Fork, Watch, etc.) that aren't what they asked about — extra arrows on the wrong spots are confusing and usually misplaced.
-    - only add more arrows when the question genuinely involves several elements, and only for things that are clearly visible — give each its own short label. never pad to hit a number, and never add a mark you're not confident is in the right place.
-    - for any "how do i..." question with multiple clicks, lay out the real sequence as numbered [STEP] marks so they can follow along click by click.
-    - keep every label/instruction to about 5 words max.
-
-    examples (coordinates are on the 0–1000 grid):
-    - "that's the Star button — clicking it bookmarks this repo to your account. [ARROW:780,255:Star button]"
-    - "to deploy: open the menu, then pick production. [STEP:1:140,90:open the deploy menu] [STEP:2:560,470:choose production]"
-    """
-
     private static let companionLiveResponseSystemPrompt = """
-    you're ilearn, a friendly assistant that helps the user understand and do things on their screen. the user asked a question about what they're looking at right now. you can see a screenshot of their screen, and you point at real on-screen controls by NAME — a small labeled arrow then appears on their ACTUAL screen, pinned to each control you name, so they can follow along on the real thing while they read. this is an ongoing conversation — you remember everything they've asked before.
+    you're mentorly, a friendly assistant that helps the user understand and do things on their screen. they asked about what they're looking at right now. you can see a screenshot, and you point at real on-screen controls by NAME, which makes a small labeled arrow appear on their actual screen pinned to that control. this is an ongoing conversation, so you remember what they've asked before.
 
     rules:
-    - answer the user directly. NEVER narrate your own process or thinking, and never mention tools, files, reading, the screenshot, or the list of controls. the user only sees a clean explanation plus arrows on their screen — never a play-by-play of how you produced it.
-    - explain in the simplest, most beginner-friendly language possible. assume the user is brand new to this and has zero background knowledge — define every piece of jargon the first time you use it, in plain words. write like you're kindly explaining to a smart friend who has never seen this screen before.
-    - keep the prose SHORT and warm. the arrows carry the "where," so your words carry the "what" and "why" in a sentence or two, not a wall of text. don't repeat in words what an arrow already shows.
-    - never say "simply" or "just" — if it were simple they wouldn't be asking.
-    - talk about the controls naturally in your prose ("the Star button", "the search box") — never mention tags, lists, names-in-quotes, or coordinates.
+    - answer directly. never narrate your process or mention tools, files, the screenshot, or the control list. the user only sees a clean explanation plus arrows.
+    - write for a total beginner: the simplest plain language, and define any jargon the first time you use it in parentheses.
+    - sound like a real person, not a manual. short everyday sentences, contractions, warm casual tone. never say "simply" or "just".
+    - never use em dashes or en dashes (— or –). use commas, periods, or parentheses instead.
+    - keep it SHORT. the arrows carry the "where," your words carry the "what" and "why." don't restate what an arrow already shows.
+    - name controls naturally in your prose ("the Star button", "the search box"), never mention tags, lists, quotes, or coordinates.
+
+    format:
+    - lead with ONE short sentence that answers the question or says what the thing is.
+    - for a "how do i..." or anything multi-step, use a NUMBERED list, one action per line, in order.
+    - for a few parallel options, use short "-" bullets, one idea per line.
+    - for a plain concept, 1-2 sentences is enough; add an everyday analogy only when it truly helps ("think of it like a folder that holds other folders").
 
     pointing at real controls:
-    - you'll be given a list of the controls currently on the user's screen, by their exact names. to point at one, write a tag using its EXACT name from that list.
-    - point at one specific control: [POINT:exact control name]
-    - show an ordered how-to ("how do i..."): one [STEP:n:exact control name] per step, numbered from 1, in the order to do them.
-    - put ALL tags at the very END of your reply, each on its own line, AFTER your explanation.
+    - you'll get a list of the controls on screen by their exact names. to point at one, write a tag with its EXACT name from that list.
+    - one control: [POINT:exact control name]
+    - ordered how-to: one [STEP:n:exact control name] per step, numbered from 1, in order.
+    - put ALL tags at the very END of your reply, each on its own line, after the explanation.
 
-    CRITICAL — only point at controls that actually appear in the provided list.
-    - never invent a control name and never point at something not in the list. a tag with a name that isn't in the list does nothing.
-    - if the thing they need is NOT in the list (it's off screen, in a menu that isn't open, or somewhere else), do not emit a tag for it — instead say so in plain words and tell them where it usually is ("the logout option is usually under your profile picture in the top-right").
-    - accuracy beats quantity: point only at the controls THIS question needs. one correct arrow is far better than several where some are guesses. do NOT point at nearby unrelated controls.
-    - for a pure-concept question with no specific control involved, just explain and emit no tags.
+    CRITICAL, only point at controls that appear in the provided list:
+    - never invent a name or point at something not in the list. a tag not in the list does nothing.
+    - if what they need isn't in the list (off screen, in a closed menu, elsewhere), don't emit a tag. say so in plain words and tell them where it usually is ("the logout option is usually under your profile picture in the top-right").
+    - accuracy beats quantity: point only at the controls THIS question needs. don't point at nearby unrelated controls.
+    - for a pure-concept question with no specific control, just explain and emit no tags.
 
     examples:
-    - "that's the Star button — clicking it bookmarks this repo to your account. [POINT:Star]"
+    - "that's the Star button, clicking it bookmarks this repo to your account. [POINT:Star]"
     - "to post your message, type it in the box and then send it. [STEP:1:Post text field] [STEP:2:Post]"
     """
-
-    /// Sends the typed question plus the selected screenshot region to Claude
-    /// and streams the response into the same Ask Window as it arrives.
-    private func sendQuestionToClaude(questionText: String, screenshotImageData: Data) {
-        currentResponseTask?.cancel()
-        responseWatchdogTask?.cancel()
-
-        let timeout = responseTimeout
-        currentResponseTask = Task {
-            askState = .processing
-            askWindowManager.beginStreamingAnswer(forQuestion: questionText)
-
-            // Make sure the watchdog is cleaned up no matter how this exits.
-            defer { responseWatchdogTask?.cancel() }
-
-            // Back-stop: if no answer comes back within the timeout, stop waiting
-            // and show an error instead of leaving the window on "thinking…".
-            responseWatchdogTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                guard let self, !Task.isCancelled, self.askState == .processing else { return }
-                self.currentResponseTask?.cancel()
-                self.askWindowManager.showAnswerError("that took too long, so i stopped waiting. try asking again — and if it keeps happening, try selecting a smaller area.")
-                self.askState = .idle
-            }
-
-            // Marks come back on a scale-invariant 0–1000 grid (see the system
-            // prompt), so we no longer hand Claude pixel dimensions — they'd only
-            // mislead, since it sees a downscaled copy of the image.
-            let imageLabel = "the area of the screen the user selected (a magenta 0–1000 coordinate grid is overlaid to help you read off positions)"
-
-            // Send the model a copy with a labeled 0–1000 grid drawn on it so it
-            // can READ each mark's position off the nearest gridline instead of
-            // guessing — the clean (ungridded) capture is what we draw the final
-            // marks onto for the user.
-            let imageDataForModel = AnnotatedScreenshotRenderer.renderCoordinateGridOverlay(baseImageData: screenshotImageData) ?? screenshotImageData
-
-            do {
-                let historyForAPI = conversationHistory.map { entry in
-                    (userPlaceholder: entry.userQuestionText, assistantResponse: entry.assistantResponse)
-                }
-
-                let (fullResponseText, _) = try await claudeBackend.analyzeImageStreaming(
-                    images: [(data: imageDataForModel, label: imageLabel)],
-                    systemPrompt: Self.companionAskResponseSystemPrompt,
-                    conversationHistory: historyForAPI,
-                    userPrompt: questionText,
-                    onTextChunk: { [weak self] accumulatedText in
-                        // Strip annotation tags as they stream so the user never
-                        // sees raw [ARROW:...] markup flash in the answer text.
-                        let displayText = ScreenshotAnnotationParser.strippedForDisplay(accumulatedText)
-                        self?.askWindowManager.updateStreamingAnswer(displayText)
-                    }
-                )
-
-                // Answer is back — stand down the timeout watchdog.
-                responseWatchdogTask?.cancel()
-
-                guard !Task.isCancelled else { return }
-
-                // Separate the prose from the marks, draw any marks onto the
-                // screenshot, and show that as the answer's centerpiece. Always
-                // render (even with no marks) so the user at least sees the clean
-                // captured screenshot crisply, never a missing image.
-                let (cleanText, annotations) = ScreenshotAnnotationParser.parse(from: fullResponseText)
-                let annotatedImage = AnnotatedScreenshotRenderer.render(baseImageData: screenshotImageData, annotations: annotations)
-                    ?? NSImage(data: screenshotImageData)
-
-                conversationHistory.append((userQuestionText: questionText, assistantResponse: cleanText))
-
-                // Keep only the last 10 exchanges to avoid unbounded context growth
-                if conversationHistory.count > 10 {
-                    conversationHistory.removeFirst(conversationHistory.count - 10)
-                }
-
-                askWindowManager.finishAnswer(annotatedImage: annotatedImage, finalText: cleanText)
-            } catch is CancellationError {
-                // User asked another question — this response was interrupted
-            } catch {
-                print("⚠️ Companion response error: \(error)")
-                askWindowManager.showAnswerError("something went wrong getting an answer — \(error.localizedDescription)")
-            }
-
-            if !Task.isCancelled {
-                askState = .idle
-                scheduleTransientHideIfNeeded()
-            }
-        }
-    }
 
     /// Sends the typed question (in LIVE mode) to Claude along with the screen
     /// the user was looking at and the menu of real on-screen controls. Streams
@@ -1121,7 +980,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private func startOnboardingPromptStream() {
-        let message = "press control + z and ask about anything on your screen"
+        let message = "press control + x and ask about anything on your screen"
         onboardingPromptText = ""
         showOnboardingPrompt = true
         onboardingPromptOpacity = 0.0
@@ -1156,9 +1015,9 @@ final class CompanionManager: ObservableObject {
     // MARK: - Onboarding Demo Interaction
 
     private static let onboardingDemoSystemPrompt = """
-    you're ilearn, a small blue cursor buddy living on the user's screen. you're showing off during onboarding — look at their screen and find ONE specific, concrete thing to point at. pick something with a clear name or identity: a specific app icon (say its name), a specific word or phrase of text you can read, a specific filename, a specific button label, a specific tab title, a specific image you can describe. do NOT point at vague things like "a window" or "some text" — be specific about exactly what you see.
+    you're mentorly, a small blue cursor buddy living on the user's screen. you're showing off during onboarding — look at their screen and find ONE specific, concrete thing to point at. pick something with a clear name or identity: a specific app icon (say its name), a specific word or phrase of text you can read, a specific filename, a specific button label, a specific tab title, a specific image you can describe. do NOT point at vague things like "a window" or "some text" — be specific about exactly what you see.
 
-    make a short quirky 3-6 word observation about the specific thing you picked — something fun, playful, or curious that shows you actually read/recognized it. no emojis ever. NEVER quote or repeat text you see on screen — just react to it. keep it to 6 words max, no exceptions.
+    make a short quirky 3-6 word observation about the specific thing you picked, something fun, playful, or curious that shows you actually read/recognized it. no emojis ever. no em dashes or en dashes (— or –) ever. NEVER quote or repeat text you see on screen, just react to it. keep it to 6 words max, no exceptions.
 
     CRITICAL COORDINATE RULE: you MUST only pick elements near the CENTER of the screen. your x coordinate must be between 20%-80% of the image width. your y coordinate must be between 20%-80% of the image height. do NOT pick anything in the top 20%, bottom 20%, left 20%, or right 20% of the screen. no menu bar items, no dock icons, no sidebar items, no items near any edge. only things clearly in the middle area of the screen. if the only interesting things are near the edges, pick something boring in the center instead.
 
