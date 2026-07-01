@@ -1,14 +1,33 @@
 # Mentorly
 
-A macOS menu bar buddy that helps you understand whatever you're looking at on your screen. Press **Control+Z** anywhere, type what you're confused about, and get a beginner-friendly explanation that streams into a small box at the bottom of your screen. As it answers, Mentorly draws labeled arrows **directly on your real screen**, pinned to the actual buttons, links, and fields it's talking about — so you follow along on the real thing while you read.
+A macOS menu bar buddy that helps you understand whatever you're looking at on your screen. Double-tap the **Command** key anywhere, type what you're confused about, and get a beginner-friendly explanation that streams into a small box at the bottom of your screen. As it answers, Mentorly draws labeled arrows **directly on your real screen**, pinned to the actual buttons, links, and fields it's talking about — so you follow along on the real thing while you read.
 
 Mentorly runs on your existing **Claude subscription** through the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI, so there's **no API key and no per-token billing** — nothing extra to pay for beyond the plan you already have. It's built on an open-source, MIT-licensed foundation (see `LICENSE`), reworked to drop the original voice pipeline (AssemblyAI + ElevenLabs) in favor of typed questions and read answers.
+
+## Download & install (no Xcode needed)
+
+**[⬇ Download Mentorly.dmg](https://github.com/brettr7388/Mentorly/releases/latest/download/Mentorly.dmg)** — latest signed + notarized build.
+
+1. Open the DMG, drag **Mentorly** into **Applications**, and launch it.
+2. Install the [Claude Code](https://claude.com/claude-code) CLI and sign in once with your Claude subscription (Pro or Max — no API key needed):
+
+   ```bash
+   curl -fsSL https://claude.ai/install.sh | bash   # or: npm install -g @anthropic-ai/claude-code
+   claude                                           # sign in with your Claude account
+   claude -p "hello"                                # confirm it answers
+   ```
+
+3. Click the Mentorly icon in the menu bar and grant the two permissions it asks for: **Accessibility** (so arrows can find the real controls) and **Screen Recording** (so it can see your screen).
+
+That's it. Double-tap **Command** anywhere, type your question, and read the answer while arrows point at the real UI. Updates arrive automatically via the built-in Sparkle updater.
+
+**Privacy note:** each ask sends a screenshot of your screen plus your question to Claude through your own subscription — the same data path as pasting a screenshot into the Claude app. Mentorly itself has no telemetry, no analytics, no logging, and no servers of its own.
 
 ## Highlights
 
 - **No voice.** No microphone, no speech-to-text, no text-to-speech. You type your question into a small box; the answer streams in right there.
-- **Points at the real UI, not a screenshot.** When you press Control+Z, Mentorly reads the frontmost app's macOS **Accessibility tree** to learn the exact on-screen location of every control. Claude names the controls it wants to point at, and the app draws labeled arrows on the live screen at those exact spots — so the arrows land on the real element instead of a guessed pixel. Several arrows (e.g. numbered how-to steps) can stay pinned at once while you read.
-- **Control+Z instead of Control+Option**, since Control+Option is already used by other Claude tooling. (The macOS undo shortcut is Command+Z, so there's no conflict, and the shortcut is listen-only — it never swallows the keystroke.)
+- **Points at the real UI, not a screenshot.** When you double-tap Command, Mentorly reads the frontmost app's macOS **Accessibility tree** to learn the exact on-screen location of every control. Claude names the controls it wants to point at, and the app draws labeled arrows on the live screen at those exact spots — so the arrows land on the real element instead of a guessed pixel. Several arrows (e.g. numbered how-to steps) can stay pinned at once while you read.
+- **Double-tap Command to trigger.** One-handed (one thumb), and it collides with nothing: a lone Command tap has no meaning on its own, any Command+key chord (Cmd+C, Cmd+V, ...) is ignored, and the listener is listen-only — it never swallows a keystroke. Either Command key works.
 - **Beginner-friendly answers.** The system prompt is tuned to explain things in plain language rather than assume background knowledge.
 - **No analytics, no email capture.** Mentorly ships with **no telemetry** — no analytics SDK, no question/answer logging, no email capture, nothing phoning home.
 - **Free to run on your Claude subscription.** By default Mentorly answers by driving the local `claude` CLI, which signs in with your Claude plan — no Anthropic API key and no per-token charges. (A Cloudflare Worker + API key path is still there as an optional fallback.)
@@ -40,7 +59,7 @@ defaults write com.ilearn.app claudeCliPath "/full/path/to/claude"
 
 ### 2. Open in Xcode and run
 
-That's it — no Worker, no key. The app shells out to the CLI, which uses your subscription. Pick your model in the menu-bar panel (Haiku for speed/cost, Sonnet for depth).
+That's it — no Worker, no key. The app shells out to the CLI, which uses your subscription. Pick your model in the menu-bar panel (Sonnet 5 for depth — the default — or Haiku for speed).
 
 ```bash
 open ILearn.xcodeproj
@@ -55,7 +74,7 @@ The app appears in your menu bar (not the dock). Click the icon to open the pane
 
 ### Permissions the app needs
 
-- **Accessibility** — for the global Control+Z shortcut **and** to read the on-screen positions of controls so the arrows land on the real UI (load-bearing for the core pointing feature)
+- **Accessibility** — for the global double-tap-Command shortcut **and** to read the on-screen positions of controls so the arrows land on the real UI (load-bearing for the core pointing feature)
 - **Screen Recording** — for capturing the screen when you press the hotkey
 - **Screen Content** — for ScreenCaptureKit access (onboarding demo)
 
@@ -88,7 +107,7 @@ For local Worker development, `npx wrangler dev` serves `http://localhost:8787`;
 
 ## Architecture
 
-If you want the full technical breakdown, read `CLAUDE.md`. Short version: a menu-bar app with no dock icon. Control+Z captures a full screenshot of the current screen and scans the frontmost app's Accessibility tree for actionable controls (each with its exact on-screen frame), then opens a small non-activating box at the bottom-center of the screen. Your typed question plus the screenshot go to Claude via streaming; the explanation streams into the box while Claude names controls with `[POINT:…]` / `[STEP:n:…]` tags. The app resolves each named control to its real frame and draws a labeled arrow on the live screen. A separate blue cursor overlay handles the onboarding demo. By default the answer comes from the local `claude` CLI running on your Claude subscription (no API key); an optional authenticated Cloudflare Worker + API key path is available as a fallback.
+If you want the full technical breakdown, read `CLAUDE.md`. Short version: a menu-bar app with no dock icon. Double-tapping Command captures a full screenshot of the current screen and scans the frontmost app's Accessibility tree for actionable controls (each with its exact on-screen frame), then opens a small non-activating box at the bottom-center of the screen. Your typed question plus the screenshot go to Claude via streaming; the explanation streams into the box while Claude names controls with `[POINT:…]` / `[STEP:n:…]` tags. The app resolves each named control to its real frame and draws a labeled arrow on the live screen. A separate blue cursor overlay handles the onboarding demo. By default the answer comes from the local `claude` CLI running on your Claude subscription (no API key); an optional authenticated Cloudflare Worker + API key path is available as a fallback.
 
 ## Project structure
 
@@ -102,7 +121,7 @@ ILearn/                  # Swift source
   ClaudeCodeBackend.swift         # Default backend: drives the local `claude` CLI
   ClaudeAPI.swift                 # Fallback backend: authenticated Worker proxy
   OverlayWindow.swift             # Blue cursor overlay + live labeled-arrow canvas
-  GlobalAskShortcutMonitor.swift  # Control+Z global shortcut
+  GlobalAskShortcutMonitor.swift  # Double-tap-Command global shortcut
 worker/                  # Cloudflare Worker proxy
   src/index.ts                    # One route: /chat (token-auth, model allowlist)
 CLAUDE.md                # Full architecture doc (agents read this)

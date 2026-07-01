@@ -35,7 +35,7 @@ interface Env {
 // caller from requesting a pricier model than the app ever uses.
 const ALLOWED_MODELS = new Set<string>([
   "claude-haiku-4-5",
-  "claude-sonnet-4-6",
+  "claude-sonnet-5",
 ]);
 
 // Hard ceiling on output tokens, whatever the client asks for.

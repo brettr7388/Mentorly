@@ -35,7 +35,7 @@ class ElementLocationDetector {
         (1366, 768,  1366.0 / 768.0)   // ~16:9  = 1.779 (external monitors, ultrawide fallback)
     ]
 
-    init(apiKey: String, model: String = "claude-sonnet-4-6") {
+    init(apiKey: String, model: String = "claude-sonnet-5") {
         self.apiKey = apiKey
         self.apiURL = URL(string: "https://api.anthropic.com/v1/messages")!
         self.model = model

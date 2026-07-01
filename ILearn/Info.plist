@@ -5,7 +5,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/brettr7388/iLearn/main/appcast.xml</string>
+	<string>https://raw.githubusercontent.com/brettr7388/Mentorly/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>a8eZm49M1aGaYO3foXyjD/6CekxDOnXEMi07IH3CqKg=</string>
 	<key>NSScreenCaptureUsageDescription</key>

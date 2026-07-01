@@ -442,7 +442,7 @@ struct CompanionPanelView: View {
 
             HStack(spacing: 0) {
                 modelOptionButton(label: "Haiku", modelID: "claude-haiku-4-5")
-                modelOptionButton(label: "Sonnet", modelID: "claude-sonnet-4-6")
+                modelOptionButton(label: "Sonnet 5", modelID: "claude-sonnet-5")
             }
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)

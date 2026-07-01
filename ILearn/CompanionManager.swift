@@ -176,9 +176,10 @@ final class CompanionManager: ObservableObject {
     /// Used by the panel to show accurate status text ("Active" vs "Ready").
     @Published private(set) var isOverlayVisible: Bool = false
 
-    /// The Claude model used for answering. Defaults to the cheapest model
-    /// (Haiku) to keep API costs minimal. Persisted to UserDefaults.
-    @Published var selectedModel: String = UserDefaults.standard.string(forKey: "selectedClaudeModel") ?? "claude-haiku-4-5"
+    /// The Claude model used for answering. Defaults to Sonnet 5 for answer
+    /// quality — the CLI backend runs on the user's Claude subscription, so
+    /// there is no per-token cost either way. Persisted to UserDefaults.
+    @Published var selectedModel: String = UserDefaults.standard.string(forKey: "selectedClaudeModel") ?? "claude-sonnet-5"
 
     func setSelectedModel(_ model: String) {
         selectedModel = model

@@ -66,12 +66,13 @@ if [ -n "$LATEST_TAG" ]; then
     # Strip the "v" prefix to get the version number (e.g. "v1.5" → "1.5")
     LATEST_VERSION="${LATEST_TAG#v}"
 
-    # Get the build number from the latest release's app bundle inside the DMG.
-    # We download just the release metadata (not the DMG) and parse the body/notes,
-    # but the simplest reliable approach is to track it from the GitHub release title
-    # or from a known incrementing sequence. We use the GitHub API to get asset info
-    # and derive the build number from the release list count.
-    LATEST_BUILD=$(gh release list --repo "${GITHUB_REPO}" --json tagName --jq 'length' 2>/dev/null || echo "0")
+    # Get the highest build number from the published appcast. generate_appcast
+    # writes each release's build number into sparkle:version, so this survives
+    # deleted releases — counting GitHub releases does not, and a non-increasing
+    # build number makes Sparkle refuse to offer the update.
+    LATEST_BUILD=$(curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPO}/main/appcast.xml" 2>/dev/null \
+        | grep -o 'sparkle:version="[0-9][0-9]*"' | grep -o '[0-9][0-9]*' | sort -n | tail -1)
+    LATEST_BUILD=${LATEST_BUILD:-0}
 
     echo "   Latest release: ${LATEST_TAG} (build ${LATEST_BUILD})"
 else
@@ -262,6 +263,13 @@ git commit -m "Update appcast.xml for v${MARKETING_VERSION}" || echo "   (no cha
 git push || echo "   (push failed — you may need to push manually)"
 cd "${PROJECT_DIR}"
 rm -rf "${RELEASES_REPO_DIR}"
+
+# Running xcodebuild invalidates this machine's TCC grants for the dev build —
+# they still show ON in System Settings but are dead. Reset them so the next
+# Xcode run re-prompts cleanly instead of silently failing.
+echo "🔓 Resetting stale TCC permissions for com.ilearn.app..."
+tccutil reset Accessibility com.ilearn.app || true
+tccutil reset ScreenCapture com.ilearn.app || true
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"

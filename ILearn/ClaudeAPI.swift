@@ -18,7 +18,7 @@ class ClaudeAPI: ClaudeBackend {
     private let authToken: String?
     private let session: URLSession
 
-    init(proxyURL: String, model: String = "claude-sonnet-4-6", authToken: String? = nil) {
+    init(proxyURL: String, model: String = "claude-sonnet-5", authToken: String? = nil) {
         self.apiURL = URL(string: proxyURL)!
         self.model = model
         self.authToken = authToken
