@@ -176,10 +176,19 @@ final class CompanionManager: ObservableObject {
     /// Used by the panel to show accurate status text ("Active" vs "Ready").
     @Published private(set) var isOverlayVisible: Bool = false
 
-    /// The Claude model used for answering. Defaults to Sonnet 5 for answer
-    /// quality — the CLI backend runs on the user's Claude subscription, so
-    /// there is no per-token cost either way. Persisted to UserDefaults.
-    @Published var selectedModel: String = UserDefaults.standard.string(forKey: "selectedClaudeModel") ?? "claude-sonnet-5"
+    /// The Claude model used for answering. Defaults to Haiku for the fastest
+    /// answers (Sonnet 5 is one click away in the panel for harder questions).
+    /// Persisted to UserDefaults. A saved model the picker no longer offers
+    /// (e.g. the retired claude-sonnet-4-6) falls back to the default instead
+    /// of being sent.
+    @Published var selectedModel: String = {
+        let offeredModelIDs = ["claude-haiku-4-5", "claude-sonnet-5"]
+        if let savedModelID = UserDefaults.standard.string(forKey: "selectedClaudeModel"),
+           offeredModelIDs.contains(savedModelID) {
+            return savedModelID
+        }
+        return "claude-haiku-4-5"
+    }()
 
     func setSelectedModel(_ model: String) {
         selectedModel = model

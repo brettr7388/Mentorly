@@ -59,7 +59,7 @@ defaults write com.ilearn.app claudeCliPath "/full/path/to/claude"
 
 ### 2. Open in Xcode and run
 
-That's it — no Worker, no key. The app shells out to the CLI, which uses your subscription. Pick your model in the menu-bar panel (Sonnet 5 for depth — the default — or Haiku for speed).
+That's it — no Worker, no key. The app shells out to the CLI, which uses your subscription. Pick your model in the menu-bar panel (Haiku for speed — the default — or Sonnet 5 for depth).
 
 ```bash
 open ILearn.xcodeproj
