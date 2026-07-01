@@ -43,7 +43,7 @@ DMG_OUTPUT_DIR="${BUILD_DIR}/dmg"
 RELEASES_DIR="${PROJECT_DIR}/releases"  # where generate_appcast reads DMGs from
 DMG_BACKGROUND="${PROJECT_DIR}/dmg-background.png"
 
-GITHUB_REPO="brettr7388/iLearn"  # releases (DMGs) + appcast.xml are published here
+GITHUB_REPO="brettr7388/Mentorly"  # releases (DMGs) + appcast.xml are published here
 
 # Sparkle tools (auto-discovered from Xcode's SPM cache)
 SPARKLE_BIN=$(find ~/Library/Developer/Xcode/DerivedData/ILearn*/SourcePackages/artifacts/sparkle/Sparkle/bin -maxdepth 0 2>/dev/null | head -1)
