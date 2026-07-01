@@ -827,6 +827,14 @@ final class CompanionManager: ObservableObject {
                     userPrompt: userPromptWithControlsMenu,
                     onTextChunk: { [weak self] accumulatedText in
                         guard let self else { return }
+                        // Ignore chunks that arrive after the user closed the box
+                        // mid-stream: closeLiveAskFlow() already cleared the arrows
+                        // and set askState to .idle, but the backend can still
+                        // deliver a few buffered chunks before cancellation lands.
+                        // Without this guard a late chunk re-pins arrows onto a
+                        // screen whose ask box is already gone, and nothing is
+                        // left to clear them.
+                        guard self.askState == .processing else { return }
                         // Strip pointing tags as they stream so the user never
                         // sees raw [POINT:...] / [STEP:...] markup flash.
                         let displayText = LivePointingParser.strippedForDisplay(accumulatedText)
