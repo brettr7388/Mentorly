@@ -7,7 +7,7 @@
 
 import Testing
 import Foundation
-@testable import ILearn
+@testable import Mentorly
 
 struct ILearnTests {
 

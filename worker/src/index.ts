@@ -1,5 +1,5 @@
 /**
- * ILearn Proxy Worker
+ * Mentorly Proxy Worker
  *
  * Proxies requests to the Claude API so the app never ships with a raw
  * API key. The key is stored as a Cloudflare secret.

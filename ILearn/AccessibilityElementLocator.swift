@@ -1,6 +1,6 @@
 //
 //  AccessibilityElementLocator.swift
-//  ILearn
+//  Mentorly
 //
 //  Reads the frontmost application's macOS Accessibility (AX) tree and returns
 //  the actionable on-screen elements (buttons, links, menu items, fields, …)
@@ -73,7 +73,7 @@ enum AccessibilityElementLocator {
         "AXSegmentedControl"
     ]
 
-    /// Whether ILearn currently has Accessibility permission. Without it the AX
+    /// Whether Mentorly currently has Accessibility permission. Without it the AX
     /// tree of other apps is invisible and every scan returns an empty list.
     static func hasAccessibilityPermission() -> Bool {
         AXIsProcessTrusted()
@@ -109,7 +109,7 @@ enum AccessibilityElementLocator {
 
     /// Scans the frontmost (active) application's window hierarchy and returns
     /// its actionable elements. Returns an empty array if there is no frontmost
-    /// app, ILearn lacks Accessibility permission, or the app exposes nothing.
+    /// app, Mentorly lacks Accessibility permission, or the app exposes nothing.
     static func actionableElementsForFrontmostApp(maxElements: Int = 250) -> [AccessibleElement] {
         guard hasAccessibilityPermission() else { return [] }
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else { return [] }

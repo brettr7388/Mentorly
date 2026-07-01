@@ -1,6 +1,6 @@
 //
 //  MenuBarPanelManager.swift
-//  ILearn
+//  Mentorly
 //
 //  Manages the NSStatusItem (menu bar icon) and a custom borderless NSPanel
 //  that drops down below it when clicked. The panel hosts a SwiftUI view
@@ -70,7 +70,7 @@ final class MenuBarPanelManager: NSObject {
         button.target = self
     }
 
-    /// Draws the ILearn triangle as a menu bar icon. Uses the same shape
+    /// Draws the Mentorly triangle as a menu bar icon. Uses the same shape
     /// and rotation as the in-app cursor so the menu bar icon matches.
     private func makeILearnMenuBarIcon() -> NSImage {
         let iconSize: CGFloat = 18

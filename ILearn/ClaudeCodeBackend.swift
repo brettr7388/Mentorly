@@ -1,12 +1,12 @@
 //
 //  ClaudeCodeBackend.swift
-//  ILearn
+//  Mentorly
 //
 //  An answer backend that drives the locally-installed Claude Code CLI
 //  (`claude`) instead of the Cloudflare Worker + pay-as-you-go API key.
 //
 //  The CLI authenticates with the user's Claude subscription (the same login
-//  Claude Code itself uses), so running ILearn costs nothing beyond the plan
+//  Claude Code itself uses), so running Mentorly costs nothing beyond the plan
 //  the user already pays for — there is no API key and no per-token billing.
 //
 //  This implements the same `ClaudeBackend` surface as `ClaudeAPI`, so the
@@ -169,13 +169,13 @@ final class ClaudeCodeBackend: ClaudeBackend {
             "--print",
             promptText,
             "--model", model,
-            // Replace Claude Code's coding-agent persona with ILearn's tutor
+            // Replace Claude Code's coding-agent persona with Mentorly's tutor
             // persona entirely, so answers read like a friendly explainer.
             "--system-prompt", systemPrompt,
             // Let the model Read the screenshot temp files without a permission
             // prompt (there's no interactive terminal to answer one).
             "--allowedTools", "Read",
-            // Disable the user's configured MCP servers — ILearn only needs
+            // Disable the user's configured MCP servers — Mentorly only needs
             // Read, and loading them adds startup latency and noise.
             "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}",
             // Emit fine-grained streaming JSON so we can show text as it arrives.

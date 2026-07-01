@@ -1,6 +1,6 @@
 //
 //  DesignSystem.swift
-//  ILearn
+//  Mentorly
 //
 //  Centralized design system using a blue accent palette on dark surfaces,
 //  with a unified button style system. All colors, button styles, and

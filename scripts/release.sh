@@ -5,7 +5,7 @@ set -euo pipefail
 export PATH="/opt/homebrew/bin:$PATH"
 
 # =============================================================================
-# release.sh — Automates the full release pipeline for ILearn
+# release.sh — Automates the full release pipeline for Mentorly
 #
 # What it does (in order):
 #   1. Auto-detects version + build from the latest GitHub Release
@@ -245,7 +245,7 @@ echo "🏷️  Creating GitHub Release ${TAG}..."
 gh release create "${TAG}" "${DMG_PATH}" \
     --repo "${GITHUB_REPO}" \
     --title "v${MARKETING_VERSION}" \
-    --notes "ILearn v${MARKETING_VERSION}" \
+    --notes "Mentorly v${MARKETING_VERSION}" \
     --latest
 
 # ── Step 9: Push appcast.xml to the releases repo ───────────────────────────
