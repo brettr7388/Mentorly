@@ -1,6 +1,6 @@
 //
 //  ElementLocationDetector.swift
-//  ILearn
+//  Mentorly
 //
 //  Uses Claude's Computer Use API to identify the screen location of UI elements
 //  in screenshots. When a user asks about a visible element (e.g., "click the

@@ -1,6 +1,6 @@
 //
 //  AskWindowManager.swift
-//  ILearn
+//  Mentorly
 //
 //  A single, fixed-size window for the whole ask flow: shows the selected
 //  screenshot, a text field for the question, then the streamed answer in
@@ -44,7 +44,7 @@ final class AskWindowViewModel: ObservableObject {
     /// window collapses to just the header bar so the user can see the screen
     /// behind it without losing the conversation. Drives the minimize button icon.
     @Published var isAnswerBodyVisible: Bool = true
-    /// True only once the full answer has arrived (ILearn is done thinking). The
+    /// True only once the full answer has arrived (Mentorly is done thinking). The
     /// window-control buttons (collapse / resize) appear only then, so they don't
     /// flicker in mid-stream while the answer is still being written.
     @Published var isAnswerComplete: Bool = false
@@ -148,7 +148,7 @@ final class AskWindowManager: NSObject {
         // before the window is actually key and it silently drops. Re-asserting on
         // the next runloop tick, once the panel is key, makes the field reliably
         // first responder. (The panel is a nonactivating `KeyablePanel`, so it can
-        // hold keyboard focus without ILearn stealing frontmost from the user's app.)
+        // hold keyboard focus without Mentorly stealing frontmost from the user's app.)
         DispatchQueue.main.async { [weak self] in
             self?.panel?.makeKey()
             self?.viewModel.presentationToken = UUID()
@@ -346,7 +346,7 @@ final class AskWindowManager: NSObject {
         let contentWidth = width - horizontalPadding
 
         // Fixed chrome: outer top+bottom padding, the header row + its bottom
-        // padding, and the gap between the question and ILearn's reply in the
+        // padding, and the gap between the question and Mentorly's reply in the
         // transcript.
         let outerVerticalPadding = DS.Spacing.lg * 2
         let headerRowHeight: CGFloat = 26
@@ -426,6 +426,12 @@ final class AskWindowManager: NSObject {
 
     func showAnswerError(_ message: String) {
         viewModel.streamingAnswerText = message
+    }
+
+    /// Whether the ask box is currently on screen. Lets the trigger act as a
+    /// toggle (open when hidden, close when shown).
+    var isAskWindowVisible: Bool {
+        panel?.isVisible ?? false
     }
 
     func hideAskWindow() {
@@ -622,7 +628,7 @@ private struct AskWindowContentView: View {
     // MARK: - Header
 
     /// Logo + wordmark on the left, close button on the right — the chat-app
-    /// style top bar (mirrors ChatGPT / OpenRouter, with ILearn's own mark).
+    /// style top bar (mirrors ChatGPT / OpenRouter, with Mentorly's own mark).
     private var brandHeaderRow: some View {
         HStack(spacing: DS.Spacing.sm) {
             ILearnLogoBadge()
@@ -636,7 +642,7 @@ private struct AskWindowContentView: View {
 
             Spacer()
 
-            // Window controls only appear once ILearn is done thinking, so they
+            // Window controls only appear once Mentorly is done thinking, so they
             // don't flicker in mid-stream while the answer is still being written.
             if viewModel.isAnswerComplete {
                 // Minus / plus: collapse the answer body to just this bar (so the
@@ -790,7 +796,7 @@ private struct AskWindowContentView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                // ILearn's reply: the marked-up screenshot, then the explanation,
+                // Mentorly's reply: the marked-up screenshot, then the explanation,
                 // left-aligned with no bubble (mirrors the assistant style in
                 // ChatGPT where assistant messages sit flush, not in a bubble).
                 VStack(alignment: .leading, spacing: DS.Spacing.md) {

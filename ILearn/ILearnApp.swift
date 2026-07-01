@@ -1,6 +1,6 @@
 //
 //  ILearnApp.swift
-//  ILearn
+//  Mentorly
 //
 //  Menu bar-only companion app. No dock icon, no main window — just an
 //  always-available status item in the macOS menu bar. Clicking the icon
@@ -34,8 +34,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var sparkleUpdaterController: SPUStandardUpdaterController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        print("🎯 ILearn: Starting...")
-        print("🎯 ILearn: Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")")
+        print("🎯 Mentorly: Starting...")
+        print("🎯 Mentorly: Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")")
 
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 0])
 
@@ -62,9 +62,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         if loginItemService.status != .enabled {
             do {
                 try loginItemService.register()
-                print("🎯 ILearn: Registered as login item")
+                print("🎯 Mentorly: Registered as login item")
             } catch {
-                print("⚠️ ILearn: Failed to register as login item: \(error)")
+                print("⚠️ Mentorly: Failed to register as login item: \(error)")
             }
         }
     }
@@ -80,7 +80,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         do {
             try updaterController.updater.start()
         } catch {
-            print("⚠️ ILearn: Sparkle updater failed to start: \(error)")
+            print("⚠️ Mentorly: Sparkle updater failed to start: \(error)")
         }
     }
 }

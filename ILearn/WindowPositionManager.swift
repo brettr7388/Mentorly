@@ -1,6 +1,6 @@
 //
 //  WindowPositionManager.swift
-//  ILearn
+//  Mentorly
 //
 //  Manages positioning the app window on the right edge of the screen
 //  and shrinking overlapping windows from other apps via the Accessibility API.

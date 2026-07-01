@@ -1,6 +1,6 @@
 //
 //  CompanionPanelView.swift
-//  ILearn
+//  Mentorly
 //
 //  The SwiftUI content hosted inside the menu bar panel. Shows the companion
 //  ask status, the Control+C shortcut, and quick settings. Designed to feel
@@ -23,7 +23,7 @@ struct CompanionPanelView: View {
                 .padding(.top, 16)
                 .padding(.horizontal, 16)
 
-            if companionManager.hasCompletedOnboarding && companionManager.allPermissionsGranted {
+            if companionManager.allPermissionsGranted {
                 Spacer()
                     .frame(height: 12)
 
@@ -35,12 +35,6 @@ struct CompanionPanelView: View {
 
                 arrowStyleSection
                     .padding(.horizontal, 16)
-
-                Spacer()
-                    .frame(height: 12)
-
-                cursorStyleSection
-                    .padding(.horizontal, 16)
             }
 
             if !companionManager.allPermissionsGranted {
@@ -51,15 +45,7 @@ struct CompanionPanelView: View {
                     .padding(.horizontal, 16)
             }
 
-            if !companionManager.hasCompletedOnboarding && companionManager.allPermissionsGranted {
-                Spacer()
-                    .frame(height: 16)
-
-                startButton
-                    .padding(.horizontal, 16)
-            }
-
-            // Show ILearn toggle — hidden for now
+            // Show Mentorly toggle — hidden for now
             // if companionManager.hasCompletedOnboarding && companionManager.allPermissionsGranted {
             //     Spacer()
             //         .frame(height: 16)
@@ -128,13 +114,8 @@ struct CompanionPanelView: View {
 
     @ViewBuilder
     private var permissionsCopySection: some View {
-        if companionManager.hasCompletedOnboarding && companionManager.allPermissionsGranted {
-            Text("Press Control+X to ask about anything on screen.")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(DS.Colors.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else if companionManager.allPermissionsGranted {
-            Text("You're all set. Hit Start to meet Mentorly.")
+        if companionManager.allPermissionsGranted {
+            Text("Double-tap Command (⌘) to ask about anything on screen.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(DS.Colors.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -157,7 +138,7 @@ struct CompanionPanelView: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(DS.Colors.textSecondary)
 
-                Text("Press Control+X, ask about anything on your screen, and get a beginner-friendly explanation with arrows pointing right at what matters.")
+                Text("Double-tap Command (⌘), ask about anything on your screen, and get a beginner-friendly explanation with arrows pointing right at what matters.")
                     .font(.system(size: 11))
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -171,28 +152,6 @@ struct CompanionPanelView: View {
         }
     }
 
-    // MARK: - Email + Start Button
-
-    @ViewBuilder
-    private var startButton: some View {
-        if !companionManager.hasCompletedOnboarding && companionManager.allPermissionsGranted {
-            Button(action: {
-                companionManager.triggerOnboarding()
-            }) {
-                Text("Start")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(DS.Colors.textOnAccent)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: DS.CornerRadius.large, style: .continuous)
-                            .fill(DS.Colors.accent)
-                    )
-            }
-            .buttonStyle(.plain)
-            .pointerCursor()
-        }
-    }
 
     // MARK: - Permissions
 
@@ -442,7 +401,7 @@ struct CompanionPanelView: View {
 
 
 
-    // MARK: - Show ILearn Cursor Toggle
+    // MARK: - Show Mentorly Cursor Toggle
 
     private var showILearnCursorToggleRow: some View {
         HStack {
@@ -518,14 +477,14 @@ struct CompanionPanelView: View {
 
     // MARK: - Arrow Style
 
-    /// Lets the user change the size of the live arrows and pick a color. The
-    /// color selector here is shared: it drives BOTH the arrows and the
-    /// cursor/pointer (see `cursorStyleSection`, which only carries size).
+    /// Lets the user pick a single size and color for the live arrows AND the
+    /// cursor/pointer. Both controls are shared: there is intentionally no
+    /// separate cursor size or color, so the two always match.
     /// Mirrors the model picker's compact segmented style.
     private var arrowStyleSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Arrow size")
+                Text("Size")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(DS.Colors.textSecondary)
 
@@ -546,7 +505,7 @@ struct CompanionPanelView: View {
                 )
             }
 
-            // Single shared color selector — drives BOTH the live arrows and the
+            // Single shared color selector, drives BOTH the live arrows and the
             // cursor/pointer, so there's never a mismatched pair of pickers.
             HStack {
                 Text("Color")
@@ -599,55 +558,6 @@ struct CompanionPanelView: View {
                 .overlay(
                     Circle()
                         .strokeBorder(DS.Colors.borderSubtle, lineWidth: 0.5)
-                )
-        }
-        .buttonStyle(.plain)
-        .pointerCursor()
-    }
-
-    // MARK: - Cursor Style
-
-    /// Lets the user change the size of the blue cursor/pointer that follows the
-    /// mouse. Color is deliberately omitted here — the pointer shares the single
-    /// "Color" selector in `arrowStyleSection`, so arrows and cursor always match.
-    private var cursorStyleSection: some View {
-        HStack {
-            Text("Cursor size")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(DS.Colors.textSecondary)
-
-            Spacer()
-
-            HStack(spacing: 0) {
-                ForEach(CompanionManager.ArrowSize.allCases) { size in
-                    cursorSizeOptionButton(size)
-                }
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
-            )
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func cursorSizeOptionButton(_ size: CompanionManager.ArrowSize) -> some View {
-        let isSelected = companionManager.cursorSize == size
-        return Button(action: {
-            companionManager.cursorSize = size
-        }) {
-            Text(size.displayName)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(isSelected ? DS.Colors.textPrimary : DS.Colors.textTertiary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(isSelected ? Color.white.opacity(0.1) : Color.clear)
                 )
         }
         .buttonStyle(.plain)

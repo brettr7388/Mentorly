@@ -1,6 +1,6 @@
 //
 //  OverlayWindow.swift
-//  ILearn
+//  Mentorly
 //
 //  System-wide transparent overlay window for blue glowing cursor.
 //  One OverlayWindow is created per screen so the cursor buddy
@@ -336,7 +336,7 @@ struct BlueCursorView: View {
             // timer controls position directly at 60fps for a smooth arc flight.
             Triangle()
                 .fill(companionManager.arrowColor)
-                .frame(width: 16 * companionManager.cursorSizeScale, height: 16 * companionManager.cursorSizeScale)
+                .frame(width: 16 * companionManager.arrowSizeScale, height: 16 * companionManager.arrowSizeScale)
                 .rotationEffect(.degrees(triangleRotationDegrees))
                 .shadow(color: companionManager.arrowColor, radius: 8 + (buddyFlightScale - 1.0) * 20, x: 0, y: 0)
                 .scaleEffect(buddyFlightScale)
@@ -354,11 +354,11 @@ struct BlueCursorView: View {
                     value: triangleRotationDegrees
                 )
 
-            // Blue spinner — shown while the AI is processing the ask. Matches
-            // the shared arrow color + the cursor size so the buddy stays cohesive.
+            // Blue spinner, shown while the AI is processing the ask. Matches the
+            // shared arrow color + size so the buddy stays cohesive.
             BlueCursorSpinnerView(
                 cursorColor: companionManager.arrowColor,
-                sizeScale: companionManager.cursorSizeScale
+                sizeScale: companionManager.arrowSizeScale
             )
                 .opacity(buddyIsVisibleOnThisScreen && companionManager.askState == .processing ? cursorOpacity : 0)
                 .position(cursorPosition)
@@ -388,15 +388,13 @@ struct BlueCursorView: View {
 
             startTrackingCursor()
 
-            // Only show welcome message on first appearance (app start)
-            // and only if the cursor starts on this screen
+            // The cursor buddy just fades in and quietly follows the mouse. The
+            // old first-launch onboarding (the "hey! i'm your mentorly buddy"
+            // welcome bubble, the arrow flying out to point at something with a
+            // comment, and the "double-tap command" hint) was removed.
             if isFirstAppearance && isCursorOnThisScreen {
                 withAnimation(.easeIn(duration: 2.0)) {
                     self.cursorOpacity = 1.0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    self.bubbleOpacity = 0.0
-                    startWelcomeAnimation()
                 }
             } else {
                 self.cursorOpacity = 1.0

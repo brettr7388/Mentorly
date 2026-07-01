@@ -1,6 +1,6 @@
 //
 //  AppBundleConfiguration.swift
-//  ILearn
+//  Mentorly
 //
 //  Shared helper for reading runtime configuration from the built app bundle.
 //

@@ -1,8 +1,8 @@
 //
 //  CompanionManager.swift
-//  ILearn
+//  Mentorly
 //
-//  Central state manager for ILearn's ask flow. Owns the global shortcut
+//  Central state manager for Mentorly's ask flow. Owns the global shortcut
 //  monitor, the screen-region capture, the Ask Window, the streaming
 //  Claude call, and the ambient cursor overlay.
 //
@@ -100,10 +100,10 @@ final class CompanionManager: ObservableObject {
     /// `useClaudeCodeBackend`. Both expose the same streaming call.
     private lazy var claudeBackend: ClaudeBackend = {
         if Self.useClaudeCodeBackend {
-            print("🧠 ILearn answer backend: Claude Code CLI (subscription)")
+            print("🧠 Mentorly answer backend: Claude Code CLI (subscription)")
             return ClaudeCodeBackend(model: selectedModel)
         } else {
-            print("🧠 ILearn answer backend: Cloudflare Worker (API key)")
+            print("🧠 Mentorly answer backend: Cloudflare Worker (API key)")
             return ClaudeAPI(proxyURL: "\(Self.workerBaseURL)/chat", model: selectedModel, authToken: Self.workerAuthToken)
         }
     }()
@@ -129,7 +129,7 @@ final class CompanionManager: ObservableObject {
     // MARK: Live-ask context (captured at hotkey press, used at submit)
 
     /// The screenshot of the screen the user was looking at when they invoked
-    /// ILearn, captured BEFORE the ask box appears so the box never pollutes it.
+    /// Mentorly, captured BEFORE the ask box appears so the box never pollutes it.
     private var liveCapturedScreenshot: Data?
     /// The actionable Accessibility elements of the user's target app at invoke
     /// time, used to resolve the model's named targets to exact on-screen frames.
@@ -148,7 +148,7 @@ final class CompanionManager: ObservableObject {
     //
     // Browsers/Electron apps keep their web-content accessibility tree OFF until
     // an assistive client asks for it, and building it the first time takes a
-    // beat. If we only flipped that switch when Control+X is pressed, the very
+    // beat. If we only flipped that switch when the trigger fires, the very
     // first ask against a just-opened app would scan a still-empty tree and miss
     // every on-screen control — which is why it used to take TWO presses. To
     // avoid that, we proactively warm each app the moment it becomes frontmost
@@ -224,21 +224,12 @@ final class CompanionManager: ObservableObject {
         didSet { UserDefaults.standard.set(arrowSize.rawValue, forKey: "arrowSize") }
     }
 
-    /// Multiplier the overlay applies to every drawn live-arrow dimension.
+    /// Multiplier the overlay applies to every drawn dimension. Shared by both
+    /// the live arrows AND the cursor/pointer, so a single "Size" selector drives
+    /// both (the cursor has no separate size or color setting of its own).
     var arrowSizeScale: CGFloat { arrowSize.scale }
 
-    /// Chosen cursor size. Persisted; the overlay reads `cursorSizeScale`. Reuses
-    /// the same Small/Medium/Large scale options as the live arrows. The cursor's
-    /// *color* is intentionally NOT separate — it shares the single `arrowColor`
-    /// selector so arrows and the pointer always match.
-    @Published var cursorSize: ArrowSize = ArrowSize(rawValue: UserDefaults.standard.string(forKey: "cursorSize") ?? "") ?? .medium {
-        didSet { UserDefaults.standard.set(cursorSize.rawValue, forKey: "cursorSize") }
-    }
-
-    /// Multiplier the overlay applies to the drawn cursor/pointer dimensions.
-    var cursorSizeScale: CGFloat { cursorSize.scale }
-
-    /// User preference for whether the ILearn cursor should be shown.
+    /// User preference for whether the Mentorly cursor should be shown.
     /// When toggled off, the overlay is hidden and the ambient buddy is disabled.
     /// Persisted to UserDefaults so the choice survives app restarts.
     @Published var isILearnCursorEnabled: Bool = UserDefaults.standard.object(forKey: "isILearnCursorEnabled") == nil
@@ -277,7 +268,7 @@ final class CompanionManager: ObservableObject {
 
     func start() {
         refreshAllPermissions()
-        print("🔑 ILearn start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), screenContent: \(hasScreenContentPermission), onboarded: \(hasCompletedOnboarding)")
+        print("🔑 Mentorly start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), screenContent: \(hasScreenContentPermission), onboarded: \(hasCompletedOnboarding)")
         startPermissionPolling()
         bindShortcutTransitions()
         startAccessibilityWarmup()
@@ -287,37 +278,35 @@ final class CompanionManager: ObservableObject {
         // fires; for the CLI path it's a cheap no-op.
         _ = claudeBackend
 
-        // If the user already completed onboarding AND all permissions are
-        // still granted, show the cursor overlay immediately. If permissions
-        // were revoked (e.g. signing change), don't show the cursor — the
-        // panel will show the permissions UI instead.
-        if hasCompletedOnboarding && allPermissionsGranted && isILearnCursorEnabled {
+        // If all permissions are granted, drop straight into the ready state:
+        // mark setup complete and show the cursor overlay. If permissions were
+        // revoked (e.g. signing change), this no-ops and the panel shows the
+        // permissions UI instead.
+        completeSetupIfPermitted()
+    }
+
+    /// Once every permission is granted there's nothing left to onboard (the
+    /// welcome/pointing demo was removed), so mark setup complete and show the
+    /// cursor overlay. This makes the app go straight to the ready UI instead of
+    /// showing a "Hit Start" page. Safe to call repeatedly (it's idempotent) and
+    /// no-ops until all permissions are granted. Setting `hasCompletedOnboarding`
+    /// also lets the panel tell "first run" apart from "permissions revoked".
+    private func completeSetupIfPermitted() {
+        guard allPermissionsGranted else { return }
+
+        if !hasCompletedOnboarding {
+            hasCompletedOnboarding = true
+        }
+
+        if !isOverlayVisible && isILearnCursorEnabled {
             overlayWindowManager.hasShownOverlayBefore = true
             overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
             isOverlayVisible = true
         }
     }
 
-    /// Called by BlueCursorView after the buddy finishes its pointing
-    /// animation and returns to cursor-following mode.
-    /// Triggers the onboarding sequence — dismisses the panel and restarts
-    /// the overlay so the welcome animation and pointing demo play.
-    func triggerOnboarding() {
-        // Post notification so the panel manager can dismiss the panel
-        NotificationCenter.default.post(name: .iLearnDismissPanel, object: nil)
-
-        // Mark onboarding as completed so the Start button won't appear
-        // again on future launches — the cursor will auto-show instead
-        hasCompletedOnboarding = true
-
-        // Show the overlay for the first time — isFirstAppearance triggers
-        // the welcome animation and pointing demo
-        overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-        isOverlayVisible = true
-    }
-
     /// Begins proactively warming app accessibility trees in the background so
-    /// the first Control+X never lands on a cold, empty tree (the old
+    /// the first ask never lands on a cold, empty tree (the old
     /// "press it twice" problem). Warms whatever app is frontmost right now, then
     /// keeps warming each app as it becomes frontmost.
     private func startAccessibilityWarmup() {
@@ -455,6 +444,10 @@ final class CompanionManager: ObservableObject {
         if !hasScreenContentPermission {
             hasScreenContentPermission = UserDefaults.standard.bool(forKey: "hasScreenContentPermission")
         }
+
+        // The instant every permission is in place, go straight to the ready
+        // state (mark setup done + show the cursor) — no "Hit Start" step.
+        completeSetupIfPermitted()
     }
 
     /// Triggers the macOS screen content picker by performing a dummy
@@ -487,12 +480,9 @@ final class CompanionManager: ObservableObject {
                     hasScreenContentPermission = true
                     UserDefaults.standard.set(true, forKey: "hasScreenContentPermission")
 
-                    // If onboarding was already completed, show the cursor overlay now
-                    if hasCompletedOnboarding && allPermissionsGranted && !isOverlayVisible && isILearnCursorEnabled {
-                        overlayWindowManager.hasShownOverlayBefore = true
-                        overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-                        isOverlayVisible = true
-                    }
+                    // That may have been the last permission — if so, go straight
+                    // to the ready state (mark setup done + show the cursor).
+                    completeSetupIfPermitted()
                 }
             } catch {
                 print("⚠️ Screen content permission request failed: \(error)")
@@ -529,6 +519,16 @@ final class CompanionManager: ObservableObject {
         // Cancel any pending transient hide so the overlay stays visible
         transientHideTask?.cancel()
         transientHideTask = nil
+
+        // Double-tap is a toggle: if the ask box is already open, this press
+        // closes it and stops here. closeLiveAskFlow() resets the flow state so
+        // the NEXT press reliably reopens it (the old bug left the in-progress
+        // flag stuck, so after one open+close the box would never open again).
+        if askWindowManager.isAskWindowVisible {
+            askWindowManager.hideAskWindow()
+            closeLiveAskFlow()
+            return
+        }
 
         // If the cursor is hidden, bring it back transiently for this interaction
         if !isILearnCursorEnabled && !isOverlayVisible {
@@ -574,7 +574,7 @@ final class CompanionManager: ObservableObject {
         isAskFlowInProgress = true
         clearLiveArrows()
 
-        // A fresh Control+X is a brand-new conversation — clear any history from a
+        // A fresh trigger is a brand-new conversation — clear any history from a
         // previous session so this isn't one endless thread. (Follow-ups typed in
         // the box keep their history; pressing the hotkey again starts over.)
         conversationHistory.removeAll()
@@ -596,23 +596,33 @@ final class CompanionManager: ObservableObject {
                     self?.submitLiveQuestion(questionText: questionText)
                 },
                 onCancel: { [weak self] in
-                    guard let self else { return }
-                    self.isAskFlowInProgress = false
-                    // Closing the box cancels any in-flight request, clears the
-                    // arrows from the real screen, ends the conversation, and
-                    // drops the cursor to idle.
-                    self.currentResponseTask?.cancel()
-                    self.responseWatchdogTask?.cancel()
-                    self.pendingAskFlowTask?.cancel()
-                    self.clearLiveArrows()
-                    self.conversationHistory.removeAll()
-                    self.askState = .idle
-                    // If the cursor was only showing transiently for this ask,
-                    // fade the overlay back out now that the arrows are gone.
-                    self.scheduleTransientHideIfNeeded()
+                    // The box already hid itself before calling back; just tear
+                    // down the flow state (the panel's own close/Escape path).
+                    self?.closeLiveAskFlow()
                 }
             )
         }
+    }
+
+    /// Tears down the live ask flow: cancels any in-flight request, clears the
+    /// arrows from the real screen, ends the conversation, and drops the cursor
+    /// to idle. Crucially it also resets `isAskFlowInProgress`, so the flow can
+    /// never get wedged and the trigger always opens the box again next time.
+    /// Shared by the box's own close/Escape button and by the trigger toggle.
+    /// Does NOT hide the panel itself — callers that need the box hidden call
+    /// `askWindowManager.hideAskWindow()` first (the panel's own close path
+    /// already has).
+    private func closeLiveAskFlow() {
+        isAskFlowInProgress = false
+        currentResponseTask?.cancel()
+        responseWatchdogTask?.cancel()
+        pendingAskFlowTask?.cancel()
+        clearLiveArrows()
+        conversationHistory.removeAll()
+        askState = .idle
+        // If the cursor was only showing transiently for this ask, fade the
+        // overlay back out now that the arrows are gone.
+        scheduleTransientHideIfNeeded()
     }
 
     /// Captures the live-ask context: the screenshot of the screen the user is
@@ -814,7 +824,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    /// If the cursor is in transient mode (user toggled "Show ILearn" off),
+    /// If the cursor is in transient mode (user toggled "Show Mentorly" off),
     /// waits for any pointing animation to finish, then fades out the
     /// overlay after a 1-second pause. Cancelled automatically if the user
     /// starts another ask interaction.
@@ -967,7 +977,7 @@ final class CompanionManager: ObservableObject {
 
     // MARK: - Onboarding
 
-    /// Runs the onboarding pointing demo, then streams in the "press control + c"
+    /// Runs the onboarding pointing demo, then streams in the "double-tap command"
     /// prompt once it's had time to finish. Called by BlueCursorView right after
     /// the welcome message fades.
     func runOnboardingDemoThenShowPrompt() {
@@ -980,7 +990,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private func startOnboardingPromptStream() {
-        let message = "press control + x and ask about anything on your screen"
+        let message = "double-tap command and ask about anything on your screen"
         onboardingPromptText = ""
         showOnboardingPrompt = true
         onboardingPromptOpacity = 0.0
