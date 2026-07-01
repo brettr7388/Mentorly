@@ -131,6 +131,11 @@ final class CompanionManager: ObservableObject {
     /// The screenshot of the screen the user was looking at when they invoked
     /// Mentorly, captured BEFORE the ask box appears so the box never pollutes it.
     private var liveCapturedScreenshot: Data?
+    /// True when the user replaced the auto full-screen shot with their own
+    /// drag-selected region (the "capture region" button). While set, the
+    /// context capture won't overwrite `liveCapturedScreenshot` with a fresh
+    /// full-screen grab, so their chosen region is what gets sent.
+    private var liveAskUsesUserProvidedScreenshot = false
     /// The actionable Accessibility elements of the user's target app at invoke
     /// time, used to resolve the model's named targets to exact on-screen frames.
     private var liveElementsForCurrentAsk: [AccessibleElement] = []
@@ -572,6 +577,9 @@ final class CompanionManager: ObservableObject {
     private func beginLiveAskFlow() {
         guard !isAskFlowInProgress else { return }
         isAskFlowInProgress = true
+        // Each fresh ask starts from the auto full-screen capture; the user can
+        // switch to their own region via the capture-region button in the box.
+        liveAskUsesUserProvidedScreenshot = false
         clearLiveArrows()
 
         // A fresh trigger is a brand-new conversation — clear any history from a
@@ -599,8 +607,33 @@ final class CompanionManager: ObservableObject {
                     // The box already hid itself before calling back; just tear
                     // down the flow state (the panel's own close/Escape path).
                     self?.closeLiveAskFlow()
+                },
+                onCaptureRegion: { [weak self] in
+                    self?.captureUserRegionForCurrentAsk()
                 }
             )
+        }
+    }
+
+    /// Lets the user drag-select their own region of the screen (like ⌘⇧4) and
+    /// use THAT as the screenshot for this ask, instead of the full screen. Useful
+    /// when several tabs / windows are open and the question is about one specific
+    /// part. Hides the ask box during selection so it isn't in the shot, then
+    /// restores it (and the user's typed question).
+    private func captureUserRegionForCurrentAsk() {
+        Task {
+            askWindowManager.setPanelHidden(true)
+            // Give the panel a beat to disappear before the selection overlay.
+            try? await Task.sleep(nanoseconds: 150_000_000)
+
+            let regionScreenshot = await CompanionScreenCaptureUtility.captureUserSelectedRegionAsJPEG()
+
+            askWindowManager.setPanelHidden(false)
+
+            // nil means the user pressed Esc — keep the existing full-screen shot.
+            guard let regionScreenshot else { return }
+            liveCapturedScreenshot = regionScreenshot
+            liveAskUsesUserProvidedScreenshot = true
         }
     }
 
@@ -614,6 +647,7 @@ final class CompanionManager: ObservableObject {
     /// already has).
     private func closeLiveAskFlow() {
         isAskFlowInProgress = false
+        liveAskUsesUserProvidedScreenshot = false
         currentResponseTask?.cancel()
         responseWatchdogTask?.cancel()
         pendingAskFlowTask?.cancel()
@@ -658,7 +692,12 @@ final class CompanionManager: ObservableObject {
             actionableElements = AccessibilityElementLocator.actionableElementsForFrontmostApp()
         }
 
-        liveCapturedScreenshot = cursorScreenCapture?.imageData
+        // Keep the user's own region if they chose one; otherwise use the fresh
+        // full-screen capture. (The AX scan below always runs so arrows still
+        // resolve against the real screen either way.)
+        if !liveAskUsesUserProvidedScreenshot {
+            liveCapturedScreenshot = cursorScreenCapture?.imageData
+        }
         liveElementsForCurrentAsk = actionableElements
         liveElementMenuTextForCurrentAsk = formatLiveElementMenu(actionableElements)
     }
@@ -718,7 +757,7 @@ final class CompanionManager: ObservableObject {
     - you'll get a list of the controls on screen by their exact names. to point at one, write a tag with its EXACT name from that list.
     - one control: [POINT:exact control name]
     - ordered how-to: one [STEP:n:exact control name] per step, numbered from 1, in order.
-    - put ALL tags at the very END of your reply, each on its own line, after the explanation.
+    - emit each tag right after the sentence or step that mentions its control (not bunched at the end), so the arrows appear in step with your words as you write. the tags are stripped from what the user reads, so they only ever see clean prose plus the arrows.
 
     CRITICAL, only point at controls that appear in the provided list:
     - never invent a name or point at something not in the list. a tag not in the list does nothing.
@@ -786,10 +825,16 @@ final class CompanionManager: ObservableObject {
                     conversationHistory: historyForAPI,
                     userPrompt: userPromptWithControlsMenu,
                     onTextChunk: { [weak self] accumulatedText in
+                        guard let self else { return }
                         // Strip pointing tags as they stream so the user never
                         // sees raw [POINT:...] / [STEP:...] markup flash.
                         let displayText = LivePointingParser.strippedForDisplay(accumulatedText)
-                        self?.askWindowManager.updateStreamingAnswer(displayText)
+                        self.askWindowManager.updateStreamingAnswer(displayText)
+                        // Draw each arrow the moment its tag has fully streamed in,
+                        // so arrows appear in step with the words instead of all at
+                        // the end. (Only complete tags parse; partial ones wait.)
+                        let (_, streamedPointings) = LivePointingParser.parse(from: accumulatedText)
+                        self.applyLiveArrows(from: streamedPointings, within: capturedElements)
                     }
                 )
 
@@ -947,16 +992,27 @@ final class CompanionManager: ObservableObject {
     }
 
     /// Resolves each model-named pointing target to an exact on-screen frame via
-    /// the captured Accessibility elements, and replaces the live arrows with the
-    /// resulting set. Targets that don't match any real control are skipped (the
-    /// model was told only to name controls from the provided list, but we guard
-    /// anyway so a stray name never draws an arrow in the wrong place).
+    /// the captured Accessibility elements and ADDS any not already pinned, so
+    /// arrows can appear one-by-one as their tags stream in (rather than all at
+    /// the end). Called repeatedly during streaming and once more at the end to
+    /// catch any tag that only completed in the authoritative final text. Claude
+    /// streams append-only, so tags never retract — we only ever add. Targets
+    /// that don't match any real control are skipped (the model was told to name
+    /// only controls from the provided list, but we guard anyway so a stray name
+    /// never draws an arrow in the wrong place).
     private func applyLiveArrows(
         from pointings: [LivePointingParser.LivePointing],
         within elements: [AccessibleElement]
     ) {
-        var resolvedTargets: [LiveArrowTarget] = []
         for pointing in pointings {
+            // Already pinned this exact control (same step)? Skip so we don't
+            // redraw it and cause a flicker as later chunks re-parse it.
+            let alreadyPinned = liveArrowTargets.contains { existingTarget in
+                existingTarget.label == pointing.targetName
+                    && existingTarget.stepNumber == pointing.stepNumber
+            }
+            if alreadyPinned { continue }
+
             guard let matchedElement = AccessibilityElementLocator.bestMatch(
                 forTargetName: pointing.targetName,
                 in: elements
@@ -964,7 +1020,7 @@ final class CompanionManager: ObservableObject {
                 print("🎯 Live arrows: no on-screen control matched \"\(pointing.targetName)\"")
                 continue
             }
-            resolvedTargets.append(
+            liveArrowTargets.append(
                 LiveArrowTarget(
                     screenLocation: matchedElement.screenCenter,
                     label: pointing.targetName,
@@ -972,7 +1028,6 @@ final class CompanionManager: ObservableObject {
                 )
             )
         }
-        liveArrowTargets = resolvedTargets
     }
 
     // MARK: - Onboarding

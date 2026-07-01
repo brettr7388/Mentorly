@@ -896,10 +896,11 @@ private struct LiveArrowsCanvas: View {
             appearOpacity = 0
             withAnimation(.easeOut(duration: 0.35)) { appearOpacity = markers.isEmpty ? 0 : 1 }
         }
-        .onChange(of: markers.count) { newCount in
-            // Re-run the fade-in whenever the arrows change (e.g. a new answer).
-            appearOpacity = 0
-            withAnimation(.easeOut(duration: 0.35)) { appearOpacity = newCount == 0 ? 0 : 1 }
+        .onChange(of: markers.isEmpty) { isEmpty in
+            // Only fade the whole canvas when arrows first appear or all are gone.
+            // Adding arrows one-by-one as they stream, or removing one by clicking
+            // it, leaves the others untouched so they never flash out and back.
+            withAnimation(.easeOut(duration: 0.35)) { appearOpacity = isEmpty ? 0 : 1 }
         }
     }
 

@@ -64,6 +64,7 @@ final class AskWindowManager: NSObject {
     private var panel: NSPanel?
     private var onSubmitCallback: ((String) -> Void)?
     private var onCancelCallback: (() -> Void)?
+    private var onCaptureRegionCallback: (() -> Void)?
 
     /// The window opens small — just enough for the header and the question
     /// pill — because at that point the user is only typing their thought. Sized
@@ -110,10 +111,12 @@ final class AskWindowManager: NSObject {
     /// no marked-up screenshot and the box stays out of the way at the bottom.
     func showLiveAskWindow(
         onSubmit: @escaping (String) -> Void,
-        onCancel: @escaping () -> Void
+        onCancel: @escaping () -> Void,
+        onCaptureRegion: @escaping () -> Void
     ) {
         onSubmitCallback = onSubmit
         onCancelCallback = onCancel
+        onCaptureRegionCallback = onCaptureRegion
         viewModel.screenshotPreviewImage = nil
         viewModel.questionText = ""
         viewModel.submittedQuestionText = ""
@@ -434,6 +437,20 @@ final class AskWindowManager: NSObject {
         panel?.isVisible ?? false
     }
 
+    /// Momentarily hides / re-shows the panel WITHOUT resetting its contents,
+    /// so the user's typed question survives. Used while they drag-select a
+    /// region so the box isn't captured in their own screenshot.
+    func setPanelHidden(_ hidden: Bool) {
+        guard let panel else { return }
+        if hidden {
+            panel.orderOut(nil)
+        } else {
+            panel.alphaValue = 1
+            panel.makeKeyAndOrderFront(nil)
+            panel.orderFrontRegardless()
+        }
+    }
+
     func hideAskWindow() {
         guard let panel, panel.isVisible else { return }
         NSAnimationContext.runAnimationGroup({ context in
@@ -461,6 +478,9 @@ final class AskWindowManager: NSObject {
             },
             onToggleHidden: { [weak self] in
                 self?.toggleAnswerBodyVisibility()
+            },
+            onCaptureRegion: { [weak self] in
+                self?.onCaptureRegionCallback?()
             }
         )
 
@@ -582,6 +602,8 @@ private struct AskWindowContentView: View {
     var onToggleSize: () -> Void
     /// Hide / show the answer body (collapse to just the header bar).
     var onToggleHidden: () -> Void
+    /// Let the user drag-select their own screenshot region for this ask.
+    var onCaptureRegion: () -> Void
 
     @FocusState private var isTextFieldFocused: Bool
 
@@ -644,24 +666,23 @@ private struct AskWindowContentView: View {
 
             // Window controls only appear once Mentorly is done thinking, so they
             // don't flicker in mid-stream while the answer is still being written.
-            if viewModel.isAnswerComplete {
-                // Minus / plus: collapse the answer body to just this bar (so the
-                // screen behind is visible) and bring it back.
+            // Minimize / restore between full-screen and the compact size, hidden
+            // in live mode (there's no big screenshot to enlarge).
+            if viewModel.isAnswerComplete && !viewModel.isLiveMode {
                 headerControlButton(
-                    systemName: viewModel.isAnswerBodyVisible ? "minus" : "plus",
-                    action: onToggleHidden
+                    systemName: viewModel.isAnswerMaximized
+                        ? "arrow.down.right.and.arrow.up.left"
+                        : "arrow.up.left.and.arrow.down.right",
+                    action: onToggleSize
                 )
+            }
 
-                // Minimize / restore between full-screen and the compact size.
-                // Hidden in live mode — there's no big screenshot to enlarge.
-                if !viewModel.isLiveMode {
-                    headerControlButton(
-                        systemName: viewModel.isAnswerMaximized
-                            ? "arrow.down.right.and.arrow.up.left"
-                            : "arrow.up.left.and.arrow.down.right",
-                        action: onToggleSize
-                    )
-                }
+            // Let the user grab their own region of the screen (like ⌘⇧4) to ask
+            // about one specific part instead of the whole screen. Only offered
+            // while composing the question, and placed right beside the close
+            // button so it reads as an alternative "set the shot" control.
+            if viewModel.isLiveMode && viewModel.isComposing {
+                headerControlButton(systemName: "camera.viewfinder", action: onCaptureRegion)
             }
 
             headerControlButton(systemName: "xmark", action: onCancel)

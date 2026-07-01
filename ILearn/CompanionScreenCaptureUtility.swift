@@ -129,4 +129,46 @@ enum CompanionScreenCaptureUtility {
 
         return capturedScreens
     }
+
+    /// Lets the user drag-select a region of the screen (the same crosshair as
+    /// macOS ⌘⇧4) and returns that region as JPEG data. Used when the user wants
+    /// to ask about one specific part rather than the whole screen. Returns nil
+    /// if the user cancels the selection (presses Esc), in which case the caller
+    /// keeps the existing full-screen screenshot.
+    static func captureUserSelectedRegionAsJPEG() async -> Data? {
+        // screencapture blocks until the user finishes selecting, so run it off
+        // the main thread. The app isn't sandboxed and already shells out to the
+        // Claude CLI, so launching /usr/sbin/screencapture is fine.
+        await Task.detached(priority: .userInitiated) { () -> Data? in
+            let temporaryImageURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("mentorly-region-\(UUID().uuidString).png")
+
+            let screencaptureProcess = Process()
+            screencaptureProcess.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            // -i: interactive drag-to-select. -x: no capture sound.
+            screencaptureProcess.arguments = ["-i", "-x", temporaryImageURL.path]
+
+            do {
+                try screencaptureProcess.run()
+                screencaptureProcess.waitUntilExit()
+            } catch {
+                return nil
+            }
+
+            // If the user pressed Esc, screencapture writes no file at all.
+            guard FileManager.default.fileExists(atPath: temporaryImageURL.path),
+                  let capturedImageData = try? Data(contentsOf: temporaryImageURL),
+                  let bitmap = NSBitmapImageRep(data: capturedImageData),
+                  let jpegData = bitmap.representation(
+                    using: .jpeg,
+                    properties: [.compressionFactor: 0.8]
+                  ) else {
+                try? FileManager.default.removeItem(at: temporaryImageURL)
+                return nil
+            }
+
+            try? FileManager.default.removeItem(at: temporaryImageURL)
+            return jpegData
+        }.value
+    }
 }
