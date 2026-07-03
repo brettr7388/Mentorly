@@ -678,10 +678,11 @@ private struct AskWindowContentView: View {
             }
 
             // Let the user grab their own region of the screen (like ⌘⇧4) to ask
-            // about one specific part instead of the whole screen. Only offered
-            // while composing the question, and placed right beside the close
-            // button so it reads as an alternative "set the shot" control.
-            if viewModel.isLiveMode && viewModel.isComposing {
+            // about one specific part instead of the whole screen. Offered while
+            // composing the first question AND on the follow-up screen (where it
+            // sets the shot for the next follow-up), placed right beside the
+            // close button so it reads as an alternative "set the shot" control.
+            if viewModel.isLiveMode && (viewModel.isComposing || viewModel.isAnswerComplete) {
                 headerControlButton(systemName: "camera.viewfinder", action: onCaptureRegion)
             }
 

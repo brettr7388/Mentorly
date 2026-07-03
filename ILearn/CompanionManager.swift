@@ -793,6 +793,11 @@ final class CompanionManager: ObservableObject {
         let capturedElements = liveElementsForCurrentAsk
         let onScreenControlsMenu = liveElementMenuTextForCurrentAsk
 
+        // A user-selected region applies to THIS ask only. Reset the flag now
+        // that the shot is locked in, so the next follow-up re-captures a fresh
+        // full screen unless the user grabs a new region via the camera button.
+        liveAskUsesUserProvidedScreenshot = false
+
         currentResponseTask = Task {
             askState = .processing
             askWindowManager.beginLiveStreamingAnswer(forQuestion: questionText)
