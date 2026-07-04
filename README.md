@@ -8,22 +8,27 @@ A macOS menu bar buddy that helps you understand whatever you're looking at on y
 
 Mentorly runs on your existing **Claude subscription** through the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI, so there's **no API key and no per-token billing** — nothing extra to pay for beyond the plan you already have. It's built on an open-source, MIT-licensed foundation (see `LICENSE`), reworked to drop the original voice pipeline (AssemblyAI + ElevenLabs) in favor of typed questions and read answers.
 
-## Download & install (no Xcode needed)
+## Get set up (clone + Xcode)
 
-**[⬇ Download Mentorly.dmg](https://github.com/brettr7388/Mentorly/releases/latest/download/Mentorly.dmg)** — latest signed + notarized build.
+There's no prebuilt download yet — you build it yourself, and the easiest way is to let Claude Code do the setup for you:
 
-1. Open the DMG, drag **Mentorly** into **Applications**, and launch it.
-2. Install the [Claude Code](https://claude.com/claude-code) CLI and sign in once with your Claude subscription (Pro or Max — no API key needed):
+```bash
+git clone https://github.com/brettr7388/Mentorly.git
+cd Mentorly
+claude
+```
 
-   ```bash
-   curl -fsSL https://claude.ai/install.sh | bash   # or: npm install -g @anthropic-ai/claude-code
-   claude                                           # sign in with your Claude account
-   claude -p "hello"                                # confirm it answers
-   ```
+Then just tell it: **"get me set up to build and run this app"** — it reads `CLAUDE.md` and walks you through the rest (Xcode signing, permissions, all of it). Prefer doing it by hand? Follow the [Setup](#setup-default--your-claude-subscription-no-api-key) section below.
 
-3. Click the Mentorly icon in the menu bar and grant the two permissions it asks for: **Accessibility** (so arrows can find the real controls) and **Screen Recording** (so it can see your screen).
+You'll need **Xcode 15+**, **macOS 14.2+**, and a **Claude subscription** (Pro or Max) with the [Claude Code](https://claude.com/claude-code) CLI signed in:
 
-That's it. Double-tap **Command** anywhere, type your question, and read the answer while arrows point at the real UI. Updates arrive automatically via the built-in Sparkle updater.
+```bash
+curl -fsSL https://claude.ai/install.sh | bash   # or: npm install -g @anthropic-ai/claude-code
+claude                                           # sign in with your Claude account
+claude -p "hello"                                # confirm it answers
+```
+
+Once it's running: double-tap **Command** anywhere, type your question, and read the answer while arrows point at the real UI.
 
 **Privacy note:** each ask sends a screenshot of your screen plus your question to Claude through your own subscription — the same data path as pasting a screenshot into the Claude app. Mentorly itself has no telemetry, no analytics, no logging, and no servers of its own.
 
@@ -71,7 +76,7 @@ open ILearn.xcodeproj
 
 In Xcode:
 1. Select the `ILearn` scheme
-2. Set your signing team under Signing & Capabilities
+2. Under **Signing & Capabilities**, set Team to your personal team (a free Apple ID works — "Sign to Run Locally" is fine since you're building for your own Mac)
 3. Hit **Cmd + R** to build and run
 
 The app appears in your menu bar (not the dock). Click the icon to open the panel, grant the permissions it asks for, and you're good.
@@ -129,7 +134,7 @@ ILearn/                  # Swift source
 worker/                  # Cloudflare Worker proxy
   src/index.ts                    # One route: /chat (token-auth, model allowlist)
 CLAUDE.md                # Full architecture doc (agents read this)
-scripts/release.sh       # Sign + notarize + DMG + Sparkle appcast + GitHub release
+scripts/release.sh       # Future: signed DMG releases (needs Apple Developer Program)
 ```
 
 ## License
