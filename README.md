@@ -1,5 +1,9 @@
 # Mentorly
 
+![Mentorly demo — ask about your screen and arrows point at the real UI](demo.gif)
+
+*Full quality: [demo.mp4](demo.mp4)*
+
 A macOS menu bar buddy that helps you understand whatever you're looking at on your screen. Double-tap the **Command** key anywhere, type what you're confused about, and get a beginner-friendly explanation that streams into a small box at the bottom of your screen. As it answers, Mentorly draws labeled arrows **directly on your real screen**, pinned to the actual buttons, links, and fields it's talking about — so you follow along on the real thing while you read.
 
 Mentorly runs on your existing **Claude subscription** through the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI, so there's **no API key and no per-token billing** — nothing extra to pay for beyond the plan you already have. It's built on an open-source, MIT-licensed foundation (see `LICENSE`), reworked to drop the original voice pipeline (AssemblyAI + ElevenLabs) in favor of typed questions and read answers.
